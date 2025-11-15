@@ -14,5 +14,5 @@ dev = [
     "mypy>=1.0.0",
 ]
 
-[tool.uv.scripts]
+[project.scripts]
 gui = "scripts.run_gui:main"
