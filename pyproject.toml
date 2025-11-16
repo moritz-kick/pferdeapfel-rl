@@ -12,7 +12,28 @@ dependencies = [
 dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
+    "PySide6-stubs>=6.5.0",
 ]
 
 [project.scripts]
 gui = "scripts.run_gui:main"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+strict = true
+warn_unused_ignores = true
+warn_return_any = true
+show_error_codes = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = "PySide6.*"
+ignore_missing_imports = false
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]  # E: pycodestyle, F: pyflakes, I: import sorting
+exclude = ["venv", ".venv", "build", "dist"]
