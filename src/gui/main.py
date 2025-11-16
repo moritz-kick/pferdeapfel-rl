@@ -6,9 +6,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import (
+from PySide6.QtCore import Qt, QTimer  # type: ignore[import]
+from PySide6.QtGui import QColor, QPainter, QPen  # type: ignore[import]
+from PySide6.QtWidgets import (  # type: ignore[import]
     QApplication,
     QComboBox,
     QHBoxLayout,
@@ -43,7 +43,7 @@ class BoardWidget(QWidget):
             self.BOARD_MARGIN * 2 + self.SQUARE_SIZE * 8,
         )
 
-    def set_game(self, game: Game) -> None:
+    def set_game(self, game: Optional[Game]) -> None:
         """Set the game instance to display."""
         self.game = game
         self.update_legal_moves()

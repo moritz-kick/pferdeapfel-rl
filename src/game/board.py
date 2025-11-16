@@ -90,4 +90,4 @@ class Board:
 
     def has_golden_apple_on_board(self) -> bool:
         """Check if any golden apple exists on the board."""
-        return np.any(self.grid == self.GOLDEN_APPLE)
+        return bool(np.any(self.grid == self.GOLDEN_APPLE))

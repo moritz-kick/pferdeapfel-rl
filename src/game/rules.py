@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.game.board import Board
 
@@ -72,7 +72,7 @@ class Rules:
             return False
 
         # Save state for undo
-        state_snapshot = {
+        state_snapshot: Dict[str, Any] = {
             "white_pos": board.white_pos,
             "black_pos": board.black_pos,
             "grid": board.grid.copy(),
@@ -127,14 +127,14 @@ class Rules:
             # Validate: square must be empty
             if not board.is_empty(extra_row, extra_col):
                 # Rollback move
-                board.white_pos = state_snapshot["white_pos"]
-                board.black_pos = state_snapshot["black_pos"]
-                board.grid = state_snapshot["grid"]
-                board.white_horse_apples = state_snapshot["white_horse_apples"]
-                board.black_horse_apples = state_snapshot["black_horse_apples"]
-                board.brown_apples_remaining = state_snapshot["brown_apples_remaining"]
-                board.golden_apples_remaining = state_snapshot["golden_apples_remaining"]
-                board.golden_phase_started = state_snapshot["golden_phase_started"]
+                board.white_pos = state_snapshot["white_pos"]  # type: ignore[assignment]
+                board.black_pos = state_snapshot["black_pos"]  # type: ignore[assignment]
+                board.grid = state_snapshot["grid"]  # type: ignore[assignment]
+                board.white_horse_apples = state_snapshot["white_horse_apples"]  # type: ignore[assignment]
+                board.black_horse_apples = state_snapshot["black_horse_apples"]  # type: ignore[assignment]
+                board.brown_apples_remaining = state_snapshot["brown_apples_remaining"]  # type: ignore[assignment]
+                board.golden_apples_remaining = state_snapshot["golden_apples_remaining"]  # type: ignore[assignment]
+                board.golden_phase_started = state_snapshot["golden_phase_started"]  # type: ignore[assignment]
                 return False
 
             # Check if placement would leave White with no legal moves
@@ -147,16 +147,16 @@ class Rules:
 
                 if len(white_legal) == 0:
                     # Invalid placement - rollback
-                    board.white_pos = state_snapshot["white_pos"]
-                    board.black_pos = state_snapshot["black_pos"]
-                    board.grid = state_snapshot["grid"]
-                    board.white_horse_apples = state_snapshot["white_horse_apples"]
-                    board.black_horse_apples = state_snapshot["black_horse_apples"]
-                    board.brown_apples_remaining = state_snapshot["brown_apples_remaining"]
+                    board.white_pos = state_snapshot["white_pos"]  # type: ignore[assignment]
+                    board.black_pos = state_snapshot["black_pos"]  # type: ignore[assignment]
+                    board.grid = state_snapshot["grid"]  # type: ignore[assignment]
+                    board.white_horse_apples = state_snapshot["white_horse_apples"]  # type: ignore[assignment]
+                    board.black_horse_apples = state_snapshot["black_horse_apples"]  # type: ignore[assignment]
+                    board.brown_apples_remaining = state_snapshot["brown_apples_remaining"]  # type: ignore[assignment]
                     board.golden_apples_remaining = state_snapshot[
                         "golden_apples_remaining"
-                    ]
-                    board.golden_phase_started = state_snapshot["golden_phase_started"]
+                    ]  # type: ignore[assignment]
+                    board.golden_phase_started = state_snapshot["golden_phase_started"]  # type: ignore[assignment]
                     return False
 
             # Place the extra apple
