@@ -1,0 +1,18 @@
+[project]
+name = "pferdeapfel-rl"
+version = "0.1.0"
+description = "Pferdeäpfel game with RL training using Stable Baselines3"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.24.0",
+    "PySide6>=6.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+[project.scripts]
+gui = "scripts.run_gui:main"
