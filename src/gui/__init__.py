@@ -1,0 +1,1 @@
+"""GUI components for Pferdeäpfel."""
