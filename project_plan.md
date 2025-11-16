@@ -76,7 +76,7 @@ pferdeapfel-rl/
 7. Create directories as per structure.
 8. Commit initial setup.
 9. Set up virtual env: `uv venv` and activate.
-10. Install deps: `uv sync`.
+10. Install deps: `uv sync --all-groups`.
 11. Add .pre-commit-config.yaml file:
 ```yaml
 repos:
