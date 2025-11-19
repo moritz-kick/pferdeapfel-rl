@@ -71,5 +71,5 @@ To ensure logical consistency regarding the "Draw" condition, the turn structure
 - The game ends when:
   - Black catches White (Game over, White keeps points accumulated so far).
   - White is immobilized (Game over, White keeps points).
-  - **Black is immobilized:** White gets **24 points**.
+  - Black is immobilized: (Game over, White keeps points).
   - **All 12 Golden Apples are used** and White can still move: White gets **24 points**.

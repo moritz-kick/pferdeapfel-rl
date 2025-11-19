@@ -326,7 +326,7 @@ class Rules:
 
             # 1. Black immobilized
             if not Rules.can_player_move(board, "black"):
-                return 24
+                return board.golden_apples_remaining
 
             # 2. All 12 Golden Apples used
             if board.golden_apples_remaining == 0:
