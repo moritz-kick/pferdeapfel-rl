@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Optional, Tuple, cast
+from typing import List, Optional, Tuple
 
 from src.game.board import Board
 

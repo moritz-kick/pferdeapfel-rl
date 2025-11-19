@@ -1,7 +1,8 @@
 import unittest
+
 from src.game.board import Board
-from src.game.rules import Rules
 from src.game.game import Game
+from src.game.rules import Rules
 from src.players.base import Player
 
 
