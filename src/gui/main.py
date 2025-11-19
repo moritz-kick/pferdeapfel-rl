@@ -22,6 +22,7 @@ from src.game.game import Game
 from src.game.rules import Rules
 from src.players.human import HumanPlayer
 from src.players.random import RandomPlayer
+from src.utils.debug_util import write_debug_log
 from src.utils.toon_parser import parse_toon
 
 
@@ -255,9 +256,23 @@ class GameWindow(QWidget):
         super().__init__()
         self.game: Optional[Game] = None
         self.log_dir = Path("data/logs/game")
+        self.debug_log_dir = Path("data/logs/debug")
         self.init_ui()
         self.load_config()
         self.new_game()
+
+    def closeEvent(self, event: Any) -> None:
+        """Handle window close event - write debug log if game is incomplete."""
+        if self.game and self.logging_button.isChecked() and not self.game.game_over:
+            # Check if both players are random players
+            if isinstance(self.white_player, RandomPlayer) and isinstance(self.black_player, RandomPlayer):
+                try:
+                    log_path = write_debug_log(self.game, self.debug_log_dir)
+                    print(f"Debug log written to: {log_path}")
+                except Exception as e:
+                    print(f"Failed to write debug log: {e}")
+
+        event.accept()
 
     def init_ui(self) -> None:
         """Initialize the UI components."""
@@ -378,6 +393,8 @@ class GameWindow(QWidget):
     def new_game(self) -> None:
         """Start a new game."""
         white_player, black_player = self.create_players()
+        self.white_player = white_player
+        self.black_player = black_player
         logging = self.logging_button.isChecked()
 
         mode_text = self.mode_combo.currentText()
@@ -476,17 +493,29 @@ class GameWindow(QWidget):
             return
 
         try:
+            print(f"[GUI] make_ai_move: {current_player.name}'s turn")
             legal_moves = self.game.get_legal_moves()
+            print(f"[GUI] Legal moves: {len(legal_moves)}")
+
             if not legal_moves:
+                print(f"[GUI] No legal moves for {current_player.name}")
                 return
 
+            print(f"[GUI] Getting move from {current_player.name}...")
             move_to, extra_apple = current_player.get_move(self.game.board, legal_moves)
+            print(f"[GUI] {current_player.name} chose: move_to={move_to}, extra_apple={extra_apple}")
+
             success = self.game.make_move(move_to, extra_apple)
+            print(f"[GUI] Move success: {success}")
 
             if success:
                 self.board_widget.update_legal_moves()
                 self.update_ui()
         except Exception as e:
+            print(f"[GUI ERROR] AI move failed: {e}")
+            import traceback
+
+            traceback.print_exc()
             QMessageBox.warning(self, "Error", f"AI move failed: {e}")
 
     def keyPressEvent(self, event: Any) -> None:
@@ -565,11 +594,21 @@ class GameWindow(QWidget):
 def main() -> None:
     """Main entry point for the GUI."""
     import argparse
+    import logging
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"
+    )
 
     parser = argparse.ArgumentParser(description="Pferdeäpfel Game GUI")
     parser.add_argument("--load-log", type=Path, help="Path to game log to load")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     # Use parse_known_args because QApplication also handles some args
     args, unknown = parser.parse_known_args()
+
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
 
     app = QApplication(sys.argv[:1] + unknown)
     window = GameWindow()
