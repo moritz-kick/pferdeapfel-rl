@@ -40,13 +40,20 @@ class Rules:
         possible_moves = Rules.get_knight_moves(row, col)
         legal_moves = []
 
+        opponent_pos = board.white_pos if player == "black" else board.black_pos
+
         for new_row, new_col in possible_moves:
             # Check if destination is empty (no horse, no apple)
-            # EXCEPTION: Black can move to White's square (capture)
             if board.is_empty(new_row, new_col):
                 legal_moves.append((new_row, new_col))
-            elif player == "black" and (new_row, new_col) == board.white_pos:
-                legal_moves.append((new_row, new_col))
+            # EXCEPTION: Capture allowed
+            # Mode 1 & 2: Both can capture
+            # Mode 3: Only Black can capture White
+            elif (new_row, new_col) == opponent_pos:
+                if board.mode in [1, 2]:
+                    legal_moves.append((new_row, new_col))
+                elif board.mode == 3 and player == "black":
+                    legal_moves.append((new_row, new_col))
 
         return legal_moves
 
@@ -234,20 +241,28 @@ class Rules:
         return Rules.can_player_move(board, "white")
 
     @staticmethod
-    def check_win_condition(board: Board) -> Optional[str]:
+    def check_win_condition(board: Board, last_mover: Optional[str] = None) -> Optional[str]:
         """
         Check if the game has ended and return the winner.
+
+        Args:
+            board: The game board
+            last_mover: The player who made the last move (important for capture win in Mode 1/2)
 
         Returns:
             "white" if White wins, "black" if Black wins, None if game continues
         """
         # --- MODE 1 & 2: Survival ---
         if board.mode in [1, 2]:
-            # Check if White is stuck
+            # 1. Capture (Immediate Win)
+            if board.white_pos == board.black_pos:
+                return last_mover
+
+            # 2. Check if White is stuck
             if not Rules.can_player_move(board, "white"):
                 return "black"
 
-            # Check if Black is stuck
+            # 3. Check if Black is stuck
             if not Rules.can_player_move(board, "black"):
                 return "white"
 

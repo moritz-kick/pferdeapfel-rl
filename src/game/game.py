@@ -64,7 +64,7 @@ class Game:
                 )
 
             # Check win condition
-            self.winner = Rules.check_win_condition(self.board)
+            self.winner = Rules.check_win_condition(self.board, last_mover=self.current_player)
             if self.winner:
                 self.game_over = True
             else:

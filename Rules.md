@@ -12,6 +12,7 @@ This project now supports three distinct modi (game modes). Each mode defines ho
 2. After placing the apple, the player makes a legal knight move.
 3. There are no color phases and no golden apples. Apples are identical blockers.
 4. The first horse that cannot move on its turn loses the game immediately, regardless of how many apples are on the board.
+5. Captures are allowed for both players and win the game.
 
 This mode emphasizes planning traps through proactive blocking.
 
@@ -21,6 +22,7 @@ This mode emphasizes planning traps through proactive blocking.
 2. After jumping, the square the horse just left is automatically filled with a horse apple (“leave a trace”).
 3. No extra placements exist and apples have no colors.
 4. As in Mode 1, the horse that first has zero legal knight moves on its turn loses.
+5. Captures are allowed for both players and win the game.
 
 This mode is about survival while leaving an unavoidable trail behind.
 
