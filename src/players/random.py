@@ -33,9 +33,45 @@ class RandomPlayer(Player):
         # Choose random move
         move_to = random.choice(legal_moves)
 
-        # Randomly decide whether to place extra apple (30% chance)
         extra_placement = None
-        if random.random() < 0.3:
+
+        # --- Classic Mode (Mode 3) Logic ---
+        if board.mode == 3:
+            # Only in Brown Phase (if apples remaining)
+            if board.brown_apples_remaining > 0:
+                # Randomly decide whether to place extra apple (e.g., 50% chance)
+                if random.random() < 0.5:
+                    # Find all empty squares
+                    empty_squares = []
+                    for row in range(board.BOARD_SIZE):
+                        for col in range(board.BOARD_SIZE):
+                            if board.is_empty(row, col):
+                                empty_squares.append((row, col))
+
+                    # Filter out squares that would block White's last move (if playing as Black)
+                    valid_placements = []
+                    from src.game.rules import Rules
+
+                    for r, c in empty_squares:
+                        # Temporarily place apple
+                        original_val = board.grid[r, c]
+                        board.grid[r, c] = Board.BROWN_APPLE
+
+                        # Check if White still has moves
+                        white_moves = Rules.get_legal_knight_moves(board, "white")
+
+                        # Restore square
+                        board.grid[r, c] = original_val
+
+                        if len(white_moves) > 0:
+                            valid_placements.append((r, c))
+
+                    if valid_placements:
+                        extra_placement = random.choice(valid_placements)
+
+        # --- Legacy/Other Modes Logic ---
+        elif board.mode == 1:
+            # Mode 1: Must place apple.
             # Find empty squares
             empty_squares = []
             for row in range(board.BOARD_SIZE):
@@ -44,10 +80,6 @@ class RandomPlayer(Player):
                         empty_squares.append((row, col))
 
             if empty_squares:
-                # Try a random empty square
-                candidate = random.choice(empty_squares)
-                # For simplicity, we'll let the Rules class validate
-                # if this would block White (for Black player)
-                extra_placement = candidate
+                extra_placement = random.choice(empty_squares)
 
         return move_to, extra_placement
