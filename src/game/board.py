@@ -41,6 +41,9 @@ class Board:
         # Track if golden phase has started
         self.golden_phase_started = False
 
+        # Track if draw condition met (Mode 3)
+        self.draw_condition_met = False
+
         # Move history for undo
         self.move_history: list[dict[str, Any]] = []
 

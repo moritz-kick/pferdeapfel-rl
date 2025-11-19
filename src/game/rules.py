@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from src.game.board import Board
 
@@ -114,7 +114,8 @@ class Rules:
 
             # Clear old position (it's empty now)
             old_pos = state_snapshot["white_pos"] if player == "white" else state_snapshot["black_pos"]
-            board.grid[old_pos[0], old_pos[1]] = Board.EMPTY
+            if isinstance(old_pos, tuple):
+                board.grid[old_pos[0], old_pos[1]] = Board.EMPTY
 
         # --- MODE 2: Trail Placement ---
         elif board.mode == 2:
@@ -206,7 +207,7 @@ class Rules:
         return True
 
     @staticmethod
-    def _rollback(board: Board, snapshot: dict) -> None:
+    def _rollback(board: Board, snapshot: dict[str, Any]) -> None:
         """Helper to rollback board state."""
         board.white_pos = snapshot["white_pos"]
         board.black_pos = snapshot["black_pos"]
@@ -217,7 +218,10 @@ class Rules:
         if "draw_condition_met" in snapshot:
             board.draw_condition_met = snapshot["draw_condition_met"]
         elif hasattr(board, "draw_condition_met"):
-            del board.draw_condition_met
+            # If not in snapshot but attribute exists, reset it (or keep as is? logic suggests reset)
+            # Actually, if it wasn't in snapshot, it might not have been set before.
+            # But we added it to __init__, so it should always be there.
+            pass
 
     @staticmethod
     def can_player_move(board: Board, player: str) -> bool:

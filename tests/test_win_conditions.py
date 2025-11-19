@@ -68,22 +68,6 @@ class TestWinConditions(unittest.TestCase):
         self.assertTrue(self.board.golden_phase_started)
         self.assertTrue(self.board.has_golden_apple_on_board())
 
-    def test_move_drops_apple(self) -> None:
-        """Test that moving a horse drops an apple."""
-        # White horse has 1 brown apple inside
-        initial_apple_count = len(self.board.white_horse_apples)
-        self.assertEqual(initial_apple_count, 1)
-
-        # Make a move
-        success = Rules.make_move(self.board, "white", (1, 2))
-        self.assertTrue(success)
-
-        # Apple should be dropped on old position
-        self.assertEqual(self.board.get_square(0, 0), Board.BROWN_APPLE)
-
-        # New apple should be added to horse
-        self.assertEqual(len(self.board.white_horse_apples), 1)
-
     def test_apple_phase_transition(self) -> None:
         """Test transition from brown to golden apples."""
         # Start with brown apples

@@ -7,16 +7,18 @@ from src.players.base import Player
 
 
 class MockPlayer(Player):
-    def get_move(self, board):
+    def get_move(
+        self, board: Board, legal_moves: list[tuple[int, int]]
+    ) -> tuple[tuple[int, int], tuple[int, int] | None]:
         return (0, 0), None
 
 
 class TestGameModes(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.white = MockPlayer("White")
         self.black = MockPlayer("Black")
 
-    def test_mode_1_free_placement(self):
+    def test_mode_1_free_placement(self) -> None:
         """Test Mode 1: Free Placement (Apple -> Move)."""
         game = Game(self.white, self.black, mode=1)
         board = game.board
@@ -40,7 +42,7 @@ class TestGameModes(unittest.TestCase):
         # Old position should be empty
         self.assertEqual(board.grid[0, 0], Board.EMPTY)
 
-    def test_mode_2_trail_placement(self):
+    def test_mode_2_trail_placement(self) -> None:
         """Test Mode 2: Trail Placement (Move -> Leave Trail)."""
         game = Game(self.white, self.black, mode=2)
         board = game.board
@@ -59,7 +61,7 @@ class TestGameModes(unittest.TestCase):
         # (5,5) should be empty (arg ignored)
         self.assertEqual(board.grid[5, 5], Board.EMPTY)
 
-    def test_mode_3_classic(self):
+    def test_mode_3_classic(self) -> None:
         """Test Mode 3: Classic (Mandatory -> Move -> Optional)."""
         game = Game(self.white, self.black, mode=3)
         board = game.board
@@ -76,7 +78,7 @@ class TestGameModes(unittest.TestCase):
         # Optional at (5, 5)
         self.assertEqual(board.grid[5, 5], Board.BROWN_APPLE)
 
-    def test_mode_1_win_condition(self):
+    def test_mode_1_win_condition(self) -> None:
         """Test Mode 1 win condition (cannot move)."""
         game = Game(self.white, self.black, mode=1)
         board = game.board

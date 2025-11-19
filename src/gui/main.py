@@ -3,7 +3,7 @@
 import json
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen
@@ -423,7 +423,10 @@ class GameWindow(QWidget):
                 self.turn_label.setText("")
             else:
                 winner_name = "White" if self.game.winner == "white" else "Black"
-                score = Rules.calculate_score(self.game.board, self.game.winner)
+                # Ensure winner is not None before calling calculate_score
+                # If game_over is True but winner is None (shouldn't happen):
+                winner_arg = self.game.winner if self.game.winner else "white"
+                score = Rules.calculate_score(self.game.board, winner_arg)
                 self.status_label.setText(f"Game Over! {winner_name} wins! Score: {score}")
                 self.turn_label.setText("")
 
@@ -484,7 +487,7 @@ class GameWindow(QWidget):
         except Exception as e:
             QMessageBox.warning(self, "Error", f"AI move failed: {e}")
 
-    def keyPressEvent(self, event) -> None:
+    def keyPressEvent(self, event: Any) -> None:
         """Handle key press events."""
         if event.key() == Qt.Key.Key_H:
             QMessageBox.information(

@@ -81,8 +81,6 @@ class Game:
         self.board.white_pos = state["white_pos"]
         self.board.black_pos = state["black_pos"]
         self.board.grid = state["grid"]
-        self.board.white_horse_apples = state["white_horse_apples"]
-        self.board.black_horse_apples = state["black_horse_apples"]
         self.board.brown_apples_remaining = state["brown_apples_remaining"]
         self.board.golden_apples_remaining = state["golden_apples_remaining"]
         self.board.golden_phase_started = state["golden_phase_started"]
