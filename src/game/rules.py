@@ -89,6 +89,7 @@ class Rules:
 
         # Drop apple from horse onto vacated square
         horse_apples = board.white_horse_apples if player == "white" else board.black_horse_apples
+        dropped_apple: Optional[int] = None
         if horse_apples:
             dropped_apple = horse_apples.pop(0)
             board.grid[old_row, old_col] = dropped_apple
@@ -97,7 +98,8 @@ class Rules:
 
         # Move horse
         new_row, new_col = move_to
-        board.grid[old_row, old_col] = Board.EMPTY
+        if dropped_apple is None:
+            board.grid[old_row, old_col] = Board.EMPTY
         board.grid[new_row, new_col] = Board.WHITE_HORSE if player == "white" else Board.BLACK_HORSE
 
         # Update position tracking
@@ -170,9 +172,14 @@ class Rules:
         return True
 
     @staticmethod
+    def can_player_move(board: Board, player: str) -> bool:
+        """Check if the given player has any legal moves."""
+        return len(Rules.get_legal_knight_moves(board, player)) > 0
+
+    @staticmethod
     def can_white_move(board: Board) -> bool:
-        """Check if White has any legal moves."""
-        return len(Rules.get_legal_knight_moves(board, "white")) > 0
+        """Check if White has any legal moves (legacy helper)."""
+        return Rules.can_player_move(board, "white")
 
     @staticmethod
     def check_win_condition(board: Board) -> Optional[str]:
@@ -182,9 +189,17 @@ class Rules:
         Returns:
             "white" if White wins, "black" if Black wins, None if game continues
         """
-        if not Rules.can_white_move(board):
-            # White cannot move - game ends
+        white_can_move = Rules.can_player_move(board, "white")
+        black_can_move = Rules.can_player_move(board, "black")
+
+        if not white_can_move:
+            # White cannot move - outcome depends on golden apples
             if board.golden_phase_started or board.has_golden_apple_on_board():
                 return "white"
             return "black"
+
+        if not black_can_move:
+            # Black cannot move - White successfully escaped
+            return "white"
+
         return None

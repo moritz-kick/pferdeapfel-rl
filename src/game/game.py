@@ -102,7 +102,17 @@ class Game:
 
     def get_legal_moves(self) -> list[tuple[int, int]]:
         """Get legal moves for the current player."""
-        return Rules.get_legal_knight_moves(self.board, self.current_player)
+        legal_moves = Rules.get_legal_knight_moves(self.board, self.current_player)
+
+        if not legal_moves and not self.game_over:
+            # Current player is stuck – determine the winner immediately
+            self.winner = Rules.check_win_condition(self.board)
+            if self.winner is None:
+                # Fallback: if rules did not determine a winner (e.g., Black stuck), award win to opponent
+                self.winner = "white" if self.current_player == "black" else "black"
+            self.game_over = True
+
+        return legal_moves
 
     def save_log(self, log_dir: Path) -> Optional[Path]:
         """Save game log to a JSON file. Returns the path if successful."""
