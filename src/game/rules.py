@@ -42,7 +42,10 @@ class Rules:
 
         for new_row, new_col in possible_moves:
             # Check if destination is empty (no horse, no apple)
+            # EXCEPTION: Black can move to White's square (capture)
             if board.is_empty(new_row, new_col):
+                legal_moves.append((new_row, new_col))
+            elif player == "black" and (new_row, new_col) == board.white_pos:
                 legal_moves.append((new_row, new_col))
 
         return legal_moves
@@ -61,115 +64,160 @@ class Rules:
             board: The game board
             player: "white" or "black"
             move_to: Destination square for the knight move
-            extra_apple_placement: Optional (row, col) for extra apple placement
+            extra_apple_placement:
+                - Mode 1: The REQUIRED placement BEFORE the move.
+                - Mode 2: Ignored.
+                - Mode 3: The OPTIONAL placement AFTER the move.
 
         Returns:
             True if move was successful, False otherwise
         """
-        # Validate move
-        legal_moves = Rules.get_legal_knight_moves(board, player)
-        if move_to not in legal_moves:
-            return False
-
         # Save state for undo
         state_snapshot = {
             "white_pos": board.white_pos,
             "black_pos": board.black_pos,
             "grid": board.grid.copy(),
-            "white_horse_apples": board.white_horse_apples.copy(),
-            "black_horse_apples": board.black_horse_apples.copy(),
             "brown_apples_remaining": board.brown_apples_remaining,
             "golden_apples_remaining": board.golden_apples_remaining,
             "golden_phase_started": board.golden_phase_started,
         }
+        if hasattr(board, "draw_condition_met"):
+            state_snapshot["draw_condition_met"] = board.draw_condition_met
 
-        # Get current position
-        old_pos = board.get_horse_position(player)
-        old_row, old_col = old_pos
+        # Initialize draw flag for this move (Mode 3)
+        board.draw_condition_met = False
 
-        # Drop apple from horse onto vacated square
-        horse_apples = board.white_horse_apples if player == "white" else board.black_horse_apples
-        dropped_apple: Optional[int] = None
-        if horse_apples:
-            dropped_apple = horse_apples.pop(0)
-            board.grid[old_row, old_col] = dropped_apple
-            if dropped_apple == Board.GOLDEN_APPLE:
-                board.golden_phase_started = True
-
-        # Move horse
-        new_row, new_col = move_to
-        if dropped_apple is None:
-            board.grid[old_row, old_col] = Board.EMPTY
-        board.grid[new_row, new_col] = Board.WHITE_HORSE if player == "white" else Board.BLACK_HORSE
-
-        # Update position tracking
-        if player == "white":
-            board.white_pos = (new_row, new_col)
-        else:
-            board.black_pos = (new_row, new_col)
-
-        # Add apple to horse (brown if available, else golden)
-        apple_to_add = Board.BROWN_APPLE
-        if board.brown_apples_remaining > 0:
-            board.brown_apples_remaining -= 1
-        else:
-            apple_to_add = Board.GOLDEN_APPLE
-            board.golden_apples_remaining -= 1
-            board.golden_phase_started = True
-
-        horse_apples.append(apple_to_add)
-
-        # Optional extra apple placement
-        if extra_apple_placement is not None:
-            extra_row, extra_col = extra_apple_placement
-            # Validate: square must be empty
-            if not board.is_empty(extra_row, extra_col):
-                # Rollback move
-                board.white_pos = cast(Tuple[int, int], state_snapshot["white_pos"])
-                board.black_pos = cast(Tuple[int, int], state_snapshot["black_pos"])
-                board.grid = cast(Any, state_snapshot["grid"])
-                board.white_horse_apples = cast(List[int], state_snapshot["white_horse_apples"])
-                board.black_horse_apples = cast(List[int], state_snapshot["black_horse_apples"])
-                board.brown_apples_remaining = cast(int, state_snapshot["brown_apples_remaining"])
-                board.golden_apples_remaining = cast(int, state_snapshot["golden_apples_remaining"])
-                board.golden_phase_started = cast(bool, state_snapshot["golden_phase_started"])
+        # --- MODE 1: Free Placement ---
+        if board.mode == 1:
+            # 1. Place Apple (Required)
+            if extra_apple_placement is None:
                 return False
 
-            # Check if placement would leave White with no legal moves
-            # (only if placing for Black)
-            if player == "black":
-                # Temporarily place the apple
-                board.grid[extra_row, extra_col] = Board.BROWN_APPLE
+            apple_row, apple_col = extra_apple_placement
+            if not board.is_empty(apple_row, apple_col):
+                return False
+
+            board.grid[apple_row, apple_col] = Board.BROWN_APPLE
+
+            # 2. Move
+            legal_moves = Rules.get_legal_knight_moves(board, player)
+            if move_to not in legal_moves:
+                Rules._rollback(board, state_snapshot)
+                return False
+
+            new_row, new_col = move_to
+            board.grid[new_row, new_col] = Board.WHITE_HORSE if player == "white" else Board.BLACK_HORSE
+            if player == "white":
+                board.white_pos = (new_row, new_col)
+            else:
+                board.black_pos = (new_row, new_col)
+
+            # Clear old position (it's empty now)
+            old_pos = state_snapshot["white_pos"] if player == "white" else state_snapshot["black_pos"]
+            board.grid[old_pos[0], old_pos[1]] = Board.EMPTY
+
+        # --- MODE 2: Trail Placement ---
+        elif board.mode == 2:
+            # 1. Move
+            legal_moves = Rules.get_legal_knight_moves(board, player)
+            if move_to not in legal_moves:
+                return False
+
+            old_pos = board.get_horse_position(player)
+            new_row, new_col = move_to
+
+            board.grid[new_row, new_col] = Board.WHITE_HORSE if player == "white" else Board.BLACK_HORSE
+            if player == "white":
+                board.white_pos = (new_row, new_col)
+            else:
+                board.black_pos = (new_row, new_col)
+
+            # 2. Leave Trail (Apple on old position)
+            board.grid[old_pos[0], old_pos[1]] = Board.BROWN_APPLE
+
+        # --- MODE 3: Classic ---
+        elif board.mode == 3:
+            # Validate move first (standard check)
+            legal_moves = Rules.get_legal_knight_moves(board, player)
+            if move_to not in legal_moves:
+                return False
+
+            # 1. Mandatory Placement
+            old_pos = board.get_horse_position(player)
+            old_row, old_col = old_pos
+
+            mandatory_apple = Board.BROWN_APPLE
+            brown_exhausted_on_mandatory = False
+
+            if board.brown_apples_remaining > 0:
+                board.brown_apples_remaining -= 1
+                if board.brown_apples_remaining == 0:
+                    brown_exhausted_on_mandatory = True
+            else:
+                mandatory_apple = Board.GOLDEN_APPLE
+                board.golden_apples_remaining -= 1
+                board.golden_phase_started = True
+
+            board.grid[old_row, old_col] = mandatory_apple
+
+            # 2. Move
+            new_row, new_col = move_to
+            captured = False
+            if player == "black" and (new_row, new_col) == board.white_pos:
+                captured = True
+                if brown_exhausted_on_mandatory:
+                    board.draw_condition_met = True
+
+            board.grid[new_row, new_col] = Board.WHITE_HORSE if player == "white" else Board.BLACK_HORSE
+            if player == "white":
+                board.white_pos = (new_row, new_col)
+            else:
+                board.black_pos = (new_row, new_col)
+
+            # 3. Optional Placement
+            if extra_apple_placement is not None and not captured:
+                extra_row, extra_col = extra_apple_placement
+                if not board.is_empty(extra_row, extra_col):
+                    Rules._rollback(board, state_snapshot)
+                    return False
+
+                # Restriction: Cannot block White's last escape route
+                temp_apple = Board.BROWN_APPLE
+                board.grid[extra_row, extra_col] = temp_apple
                 white_legal = Rules.get_legal_knight_moves(board, "white")
                 board.grid[extra_row, extra_col] = Board.EMPTY
 
                 if len(white_legal) == 0:
-                    # Invalid placement - rollback
-                    board.white_pos = cast(Tuple[int, int], state_snapshot["white_pos"])
-                    board.black_pos = cast(Tuple[int, int], state_snapshot["black_pos"])
-                    board.grid = cast(Any, state_snapshot["grid"])
-                    board.white_horse_apples = cast(List[int], state_snapshot["white_horse_apples"])
-                    board.black_horse_apples = cast(List[int], state_snapshot["black_horse_apples"])
-                    board.brown_apples_remaining = cast(int, state_snapshot["brown_apples_remaining"])
-                    board.golden_apples_remaining = cast(int, state_snapshot["golden_apples_remaining"])
-                    board.golden_phase_started = cast(bool, state_snapshot["golden_phase_started"])
+                    Rules._rollback(board, state_snapshot)
                     return False
 
-            # Place the extra apple
-            apple_type = Board.BROWN_APPLE
-            if board.brown_apples_remaining > 0:
-                board.brown_apples_remaining -= 1
-            else:
-                apple_type = Board.GOLDEN_APPLE
-                board.golden_apples_remaining -= 1
-                board.golden_phase_started = True
+                optional_apple = Board.BROWN_APPLE
+                if board.brown_apples_remaining > 0:
+                    board.brown_apples_remaining -= 1
+                else:
+                    optional_apple = Board.GOLDEN_APPLE
+                    board.golden_apples_remaining -= 1
+                    board.golden_phase_started = True
 
-            board.grid[extra_row, extra_col] = apple_type
+                board.grid[extra_row, extra_col] = optional_apple
 
         # Save move to history
         board.move_history.append(state_snapshot)
-
         return True
+
+    @staticmethod
+    def _rollback(board: Board, snapshot: dict) -> None:
+        """Helper to rollback board state."""
+        board.white_pos = snapshot["white_pos"]
+        board.black_pos = snapshot["black_pos"]
+        board.grid = snapshot["grid"]
+        board.brown_apples_remaining = snapshot["brown_apples_remaining"]
+        board.golden_apples_remaining = snapshot["golden_apples_remaining"]
+        board.golden_phase_started = snapshot["golden_phase_started"]
+        if "draw_condition_met" in snapshot:
+            board.draw_condition_met = snapshot["draw_condition_met"]
+        elif hasattr(board, "draw_condition_met"):
+            del board.draw_condition_met
 
     @staticmethod
     def can_player_move(board: Board, player: str) -> bool:
@@ -189,17 +237,88 @@ class Rules:
         Returns:
             "white" if White wins, "black" if Black wins, None if game continues
         """
-        white_can_move = Rules.can_player_move(board, "white")
-        black_can_move = Rules.can_player_move(board, "black")
+        # --- MODE 1 & 2: Survival ---
+        if board.mode in [1, 2]:
+            # Check if White is stuck
+            if not Rules.can_player_move(board, "white"):
+                return "black"
 
-        if not white_can_move:
-            # White cannot move - outcome depends on golden apples
-            if board.golden_phase_started or board.has_golden_apple_on_board():
+            # Check if Black is stuck
+            if not Rules.can_player_move(board, "black"):
                 return "white"
-            return "black"
 
-        if not black_can_move:
-            # Black cannot move - White successfully escaped
+            return None
+
+        # --- MODE 3: Classic ---
+        # 1. Draw Condition
+        if getattr(board, "draw_condition_met", False):
+            return "draw"
+
+        # 2. Capture (Black on White)
+        if board.black_pos == board.white_pos:
+            # If in Golden Phase, White technically won the match but game ends now.
+            # If in Brown Phase, Black wins.
+            if board.golden_phase_started:
+                return "white"
+            else:
+                return "black"
+
+        # 3. Immobilization
+        white_stuck = not Rules.can_player_move(board, "white")
+        black_stuck = not Rules.can_player_move(board, "black")
+
+        if white_stuck:
+            if board.golden_phase_started:
+                return "white"
+            else:
+                return "black"
+
+        if black_stuck:
+            return "white"
+
+        # 4. Golden Apples Exhausted
+        # "All 12 Golden Apples are used and White can still move: White gets 24 points."
+        if board.golden_apples_remaining == 0:
             return "white"
 
         return None
+
+    @staticmethod
+    def calculate_score(board: Board, winner: str) -> int:
+        """
+        Calculate the score for the winner.
+
+        Args:
+            board: The game board
+            winner: "white" or "black"
+
+        Returns:
+            The score.
+        """
+        if board.mode in [1, 2]:
+            return 1  # Simple win
+
+        if winner == "black":
+            # 1 point for every unused brown apple
+            return board.brown_apples_remaining
+
+        if winner == "white":
+            # Check for special 24-point conditions
+
+            # 1. Black immobilized
+            if not Rules.can_player_move(board, "black"):
+                return 24
+
+            # 2. All 12 Golden Apples used
+            if board.golden_apples_remaining == 0:
+                return 24
+
+            # Otherwise: 1 point for every Golden Apple on board
+            count = 0
+            for r in range(Board.BOARD_SIZE):
+                for c in range(Board.BOARD_SIZE):
+                    if board.grid[r, c] == Board.GOLDEN_APPLE:
+                        count += 1
+            return count
+
+        return 0

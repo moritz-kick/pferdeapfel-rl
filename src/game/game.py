@@ -15,9 +15,9 @@ from src.players.base import Player
 class Game:
     """Manages a game of Pferdeäpfel."""
 
-    def __init__(self, white_player: Player, black_player: Player, logging: bool = False) -> None:
+    def __init__(self, white_player: Player, black_player: Player, mode: int = 3, logging: bool = False) -> None:
         """Initialize a new game."""
-        self.board = Board()
+        self.board = Board(mode=mode)
         self.white_player = white_player
         self.black_player = black_player
         self.logging = logging
@@ -107,9 +107,6 @@ class Game:
         if not legal_moves and not self.game_over:
             # Current player is stuck – determine the winner immediately
             self.winner = Rules.check_win_condition(self.board)
-            if self.winner is None:
-                # Fallback: if rules did not determine a winner (e.g., Black stuck), award win to opponent
-                self.winner = "white" if self.current_player == "black" else "black"
             self.game_over = True
 
         return legal_moves

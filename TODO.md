@@ -6,6 +6,7 @@ Bugs:
 --- New:
 - [ ] Redo and adjust python (backend/frontend) to support the new rules.
 - [ ] Fix the UI to support the new rules and add a button to change the mode.
+- [ ] In Classic, keep track of the winning score points/draw result inside the ui as well as in the logs.
 - [ ] Add Keys and visual feedback in the gui. Keys:
     - [ ] h     - help
     - [ ] 1,2,3 - change mode

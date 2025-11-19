@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.game.game import Game
+from src.game.rules import Rules
 from src.players.human import HumanPlayer
 from src.players.random import RandomPlayer
 
@@ -34,8 +35,10 @@ class BoardWidget(QWidget):
         super().__init__(parent)
         self.game: Optional[Game] = None
         self.selected_square: Optional[tuple[int, int]] = None
-        # Move waiting for extra apple or confirmation
+        # Mode 3: Move waiting for extra apple or confirmation
         self.pending_move: Optional[tuple[int, int]] = None
+        # Mode 1: Apple waiting for move
+        self.pending_apple: Optional[tuple[int, int]] = None
         self.legal_moves: list[tuple[int, int]] = []
         self.setMinimumSize(
             self.BOARD_MARGIN * 2 + self.SQUARE_SIZE * 8,
@@ -78,7 +81,60 @@ class BoardWidget(QWidget):
             return
 
         current_player = self.game.get_current_player()
-        if isinstance(current_player, HumanPlayer):
+        if not isinstance(current_player, HumanPlayer):
+            return
+
+        mode = self.game.board.mode
+
+        # --- MODE 1: Free Placement (Apple FIRST, then Move) ---
+        if mode == 1:
+            # If we have a pending apple, this click is for the move
+            if self.pending_apple is not None:
+                if square in self.legal_moves:
+                    # Execute move with the pending apple
+                    success = self.game.make_move(square, self.pending_apple)
+                    if success:
+                        self.pending_apple = None
+                        self.selected_square = None
+                        self.update_legal_moves()
+                        self.update()
+                        parent = self.parent()
+                        if isinstance(parent, GameWindow):
+                            parent.update_ui()
+                    else:
+                        # Move failed (shouldn't happen if in legal_moves, but maybe blocking check)
+                        QMessageBox.warning(self, "Invalid Move", "Move invalid.")
+                        self.pending_apple = None
+                        self.update()
+                else:
+                    # Clicked somewhere else, cancel pending apple
+                    self.pending_apple = None
+                    self.selected_square = None
+                    self.update()
+
+            # No pending apple, this click is to place the apple
+            else:
+                if self.game.board.is_empty(square[0], square[1]):
+                    self.pending_apple = square
+                    self.selected_square = square
+                    self.update()
+                else:
+                    # Clicked occupied square
+                    pass
+
+        # --- MODE 2: Trail Placement (Just Move) ---
+        elif mode == 2:
+            if square in self.legal_moves:
+                success = self.game.make_move(square)
+                if success:
+                    self.update_legal_moves()
+                    self.update()
+                    parent = self.parent()
+                    if isinstance(parent, GameWindow):
+                        parent.update_ui()
+
+        # --- MODE 3: Classic (Move FIRST, then Optional Apple) ---
+        elif mode == 3:
             # Right-click to confirm move without extra apple
             if event.button() == Qt.MouseButton.RightButton and self.pending_move is not None:
                 success = self.game.make_move(self.pending_move, None)
@@ -90,6 +146,7 @@ class BoardWidget(QWidget):
                     parent = self.parent()
                     if isinstance(parent, GameWindow):
                         parent.update_ui()
+
             # If we have a pending move, this click is for extra apple placement
             elif self.pending_move is not None:
                 if self.game.board.is_empty(square[0], square[1]):
@@ -105,19 +162,16 @@ class BoardWidget(QWidget):
                             parent.update_ui()
                     else:
                         # Invalid placement (e.g., would block White)
-                        from PySide6.QtWidgets import QMessageBox
-
-                        parent = self.parent()
-                        if isinstance(parent, GameWindow):
-                            QMessageBox.warning(
-                                parent, "Invalid Placement", "Cannot place apple here (would block White's moves)."
-                            )
+                        QMessageBox.warning(
+                            self, "Invalid Placement", "Cannot place apple here (would block White's moves)."
+                        )
                         self.pending_move = None
                         self.update()
                 else:
                     # Square not empty, cancel pending move
                     self.pending_move = None
                     self.update()
+
             elif square in self.legal_moves:
                 # Select a move - wait for extra apple placement
                 # or right-click to confirm without extra
@@ -151,9 +205,13 @@ class BoardWidget(QWidget):
                     highlight = QColor(144, 238, 144, 150)
                     painter.fillRect(x, y, self.SQUARE_SIZE, self.SQUARE_SIZE, highlight)
 
-                # Highlight selected square (pending move)
-                if self.selected_square == (row, col) or self.pending_move == (row, col):
-                    painter.setPen(QPen(QColor(255, 0, 0), 3))
+                # Highlight selected square (pending move or pending apple)
+                if self.selected_square == (row, col):
+                    color = QColor(255, 0, 0)
+                    if self.pending_apple == (row, col):
+                        color = QColor(139, 69, 19)  # Brown for apple
+
+                    painter.setPen(QPen(color, 3))
                     painter.drawRect(x, y, self.SQUARE_SIZE, self.SQUARE_SIZE)
 
                 # Draw contents
@@ -222,6 +280,17 @@ class GameWindow(QWidget):
 
         player_layout.addStretch()
         layout.addLayout(player_layout)
+
+        # Mode selection
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(QLabel("Mode:"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(["1: Free Placement", "2: Trail Placement", "3: Classic"])
+        self.mode_combo.setCurrentIndex(2)  # Default to Classic
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
+        mode_layout.addWidget(self.mode_combo)
+        mode_layout.addStretch()
+        layout.addLayout(mode_layout)
 
         # Board
         self.board_widget = BoardWidget()
@@ -308,8 +377,13 @@ class GameWindow(QWidget):
         """Start a new game."""
         white_player, black_player = self.create_players()
         logging = self.logging_button.isChecked()
-        self.game = Game(white_player, black_player, logging=logging)
+
+        mode_text = self.mode_combo.currentText()
+        mode = int(mode_text.split(":")[0])
+
+        self.game = Game(white_player, black_player, mode=mode, logging=logging)
         self.board_widget.pending_move = None
+        self.board_widget.pending_apple = None
         self.board_widget.selected_square = None
         self.board_widget.set_game(self.game)
         self.update_ui()
@@ -318,6 +392,10 @@ class GameWindow(QWidget):
         """Handle player selection change."""
         if self.game:
             self.new_game()
+
+    def on_mode_changed(self) -> None:
+        """Handle mode selection change."""
+        self.new_game()
 
     def on_logging_toggled(self, checked: bool) -> None:
         """Handle logging toggle."""
@@ -340,9 +418,15 @@ class GameWindow(QWidget):
 
         # Update status
         if self.game.game_over:
-            winner_name = "White" if self.game.winner == "white" else "Black"
-            self.status_label.setText(f"Game Over! {winner_name} wins!")
-            self.turn_label.setText("")
+            if self.game.winner == "draw":
+                self.status_label.setText("Game Over! It's a Draw!")
+                self.turn_label.setText("")
+            else:
+                winner_name = "White" if self.game.winner == "white" else "Black"
+                score = Rules.calculate_score(self.game.board, self.game.winner)
+                self.status_label.setText(f"Game Over! {winner_name} wins! Score: {score}")
+                self.turn_label.setText("")
+
             # Save log if logging
             if self.game.logging:
                 log_path = self.game.save_log(self.log_dir)
@@ -351,8 +435,15 @@ class GameWindow(QWidget):
         else:
             current = self.game.get_current_player()
             status_text = f"Current player: {current.name}"
-            if isinstance(current, HumanPlayer) and self.board_widget.pending_move:
-                status_text += " - Click empty square for extra apple, or right-click to skip"
+            if isinstance(current, HumanPlayer):
+                mode = self.game.board.mode
+                if mode == 1:
+                    if self.board_widget.pending_apple:
+                        status_text += " - Select move destination"
+                    else:
+                        status_text += " - Select empty square to place apple"
+                elif mode == 3 and self.board_widget.pending_move:
+                    status_text += " - Click empty square for extra apple, or right-click to skip"
             self.status_label.setText(status_text)
             self.turn_label.setText(f"Turn: {self.game.current_player.capitalize()}")
 
@@ -392,6 +483,29 @@ class GameWindow(QWidget):
                 self.update_ui()
         except Exception as e:
             QMessageBox.warning(self, "Error", f"AI move failed: {e}")
+
+    def keyPressEvent(self, event) -> None:
+        """Handle key press events."""
+        if event.key() == Qt.Key.Key_H:
+            QMessageBox.information(
+                self,
+                "Help",
+                "Controls:\n"
+                "- Left Click: Select piece / Move / Place Apple\n"
+                "- Right Click: Confirm move without optional placement (Mode 3)\n"
+                "- 1, 2, 3: Restart in Mode 1, 2, or 3\n"
+                "- H: Show this help\n\n"
+                "Modes:\n"
+                "1. Free Placement: Place apple -> Move\n"
+                "2. Trail Placement: Move -> Leave trail\n"
+                "3. Classic: Mandatory Apple -> Move -> Optional Apple",
+            )
+        elif event.key() == Qt.Key.Key_1:
+            self.mode_combo.setCurrentIndex(0)
+        elif event.key() == Qt.Key.Key_2:
+            self.mode_combo.setCurrentIndex(1)
+        elif event.key() == Qt.Key.Key_3:
+            self.mode_combo.setCurrentIndex(2)
 
 
 def main() -> None:

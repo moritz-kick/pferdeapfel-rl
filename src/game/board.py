@@ -19,8 +19,9 @@ class Board:
     BROWN_APPLE = 3
     GOLDEN_APPLE = 4
 
-    def __init__(self) -> None:
+    def __init__(self, mode: int = 3) -> None:
         """Initialize an empty board with horses in starting positions."""
+        self.mode = mode
         self.grid = np.zeros((self.BOARD_SIZE, self.BOARD_SIZE), dtype=np.int8)
         # Place horses in opposite corners
         self.grid[0, 0] = self.WHITE_HORSE
@@ -31,12 +32,11 @@ class Board:
         self.black_pos: Tuple[int, int] = (7, 7)
 
         # Apple counts
-        self.brown_apples_remaining = 20
-        self.golden_apples_remaining = 20
+        self.brown_apples_remaining = 28
+        self.golden_apples_remaining = 12
 
-        # Apples inside horses (starts with 1 brown each)
-        self.white_horse_apples: list[int] = [self.BROWN_APPLE]
-        self.black_horse_apples: list[int] = [self.BROWN_APPLE]
+        # Track if golden phase has started
+        self.golden_phase_started = False
 
         # Track if golden phase has started
         self.golden_phase_started = False
@@ -46,14 +46,12 @@ class Board:
 
     def copy(self) -> Board:
         """Create a deep copy of the board."""
-        new_board = Board()
+        new_board = Board(mode=self.mode)
         new_board.grid = self.grid.copy()
         new_board.white_pos = self.white_pos
         new_board.black_pos = self.black_pos
         new_board.brown_apples_remaining = self.brown_apples_remaining
         new_board.golden_apples_remaining = self.golden_apples_remaining
-        new_board.white_horse_apples = self.white_horse_apples.copy()
-        new_board.black_horse_apples = self.black_horse_apples.copy()
         new_board.golden_phase_started = self.golden_phase_started
         new_board.move_history = copy.deepcopy(self.move_history)
         return new_board
