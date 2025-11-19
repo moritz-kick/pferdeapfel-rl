@@ -26,46 +26,48 @@ This mode is about survival while leaving an unavoidable trail behind.
 
 ## Mode 3 – Classic
 
-This mode recreates the original game (*Pferdeäppel* by Bütehorn Spiele) with its asymmetric win conditions and scoring.
+This mode recreates the original game (*Pferdeäppel*) with its asymmetric win conditions and scoring.
 
 ### Components & Setup
 - **Apples:** 28 Brown, 12 Golden.
-- **Setup:** 
-  - Each player drops a brown apple on their starting square.
+- **Setup:**
+  - Each player puts the knights on their starting squares.
   - White moves first.
 
 ### Turn Sequence
-1. **Move:** Make a legal knight move.
-2. **Mandatory Placement:** After the move, place a brown apple on the square where the turn ended (the horse's current position).
-   - *Note:* In the physical game, you put an apple into the horse, and it drops onto the square. This means every visited square (including start) is marked with an apple.
-3. **Optional Placement:** You may place **one additional brown apple** on any empty square.
-   - **Restriction:** You cannot place this extra apple if it blocks White's last escape route.
+To ensure logical consistency regarding the "Draw" condition, the turn structure is strictly defined as follows:
+
+1. **Mandatory Placement:**
+   Before moving, the active player places one brown apple on the square their horse currently occupies.
+2. **Move:**
+   The player makes a legal knight move to a new square.
+3. **Optional Placement:**
+   The player may choose to place **one additional brown apple** on any empty square on the board.
+   - **Restriction:** You cannot place this extra apple if it blocks White's last remaining escape route.
+
+*(Note: If the supply of brown apples runs out, players must use golden apples for placements. More about that in Phase 2.)*
 
 ### Win Conditions & Phases
 
 **Phase 1: Brown Apples (The Chase)**
-- Brown (Black) tries to catch White or immobilize White.
-- **Brown Wins Immediately If:**
-  - Brown captures White (lands on White's square).
+- Black tries to catch White or immobilize White.
+- **Black Wins Immediately If:**
+  - Black captures White (lands on White's square).
   - White is immobilized (cannot move).
   - *Condition:* This must happen **before** the supply of 28 brown apples is exhausted.
-- **Scoring for Brown:** If Brown wins, they get **1 point** for every unused brown apple remaining in the supply.
+- **Scoring for Black:** If Black wins, they get **1 point** for every unused brown apple remaining in the supply.
+
+**The Draw Condition:**
+- The game ends in a **Draw** if Black captures White on the exact turn where the **last brown apple** was used for the **Mandatory Placement**.
+- *Logic:* The supply hits 0 during step 1 (Mandatory), and the catch happens in step 2 (Move). No Golden Apple was needed, but no Brown Apples remain for points.
 
 **Phase 2: Golden Apples (The Escape)**
-- **White Wins the Game** as soon as the first **Golden Apple** is brought into play (i.e., when the brown supply is empty and a player must draw a golden apple for mandatory or optional placement).
-- **However, the game continues for scoring!**
-- Brown continues trying to catch White.
-- Every Golden Apple placed on the board counts as **1 point for White**.
+- **White Wins the Game** as soon as a **Golden Apple** is required for play (i.e., the brown supply is empty, and a player must perform a Mandatory or Optional placement using a golden apple).
+- **Scoring Mode:** Although White has technically won the match, play continues to determine the score. Every Golden Apple placed on the board counts as **1 point for White**.
 
 **End of Golden Phase:**
 - The game ends when:
-  - Brown catches White (Game over, White keeps points accumulated so far).
+  - Black catches White (Game over, White keeps points accumulated so far).
   - White is immobilized (Game over, White keeps points).
-  - **Brown is immobilized:** White gets **24 points**.
+  - **Black is immobilized:** White gets **24 points**.
   - **All 12 Golden Apples are used** and White can still move: White gets **24 points**.
-
-**Draw Condition:**
-- The game ends in a **Draw** if Brown catches White **exactly when** all 28 brown apples have been used, but **before** any golden apple has been brought into play.
-
-
-
