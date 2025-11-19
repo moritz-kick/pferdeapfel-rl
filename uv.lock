@@ -122,6 +122,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "numpy" },
     { name = "pyside6" },
+    { name = "toon-python" },
 ]
 
 [package.optional-dependencies]
@@ -138,6 +139,7 @@ requires-dist = [
     { name = "pyside6", specifier = ">=6.5.0" },
     { name = "pyside6-stubs", marker = "extra == 'dev'", specifier = ">=6.5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "toon-python", specifier = ">=0.1.2" },
 ]
 provides-extras = ["dev"]
 
@@ -238,6 +240,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/31/29/00e26f33a0fb259c2edce9c761a7a438d7531ca514bdb1a4c072673bd437/shiboken6-6.10.0-cp39-abi3-manylinux_2_39_aarch64.whl", hash = "sha256:b01377e68d14132360efb0f4b7233006d26aa8ae9bb50edf00960c2a5f52d148", size = 267698, upload-time = "2025-10-08T09:49:10.694Z" },
     { url = "https://files.pythonhosted.org/packages/11/30/e4624a7e3f0dc9796b701079b77defcce0d32d1afc86bb1d0df04bc3d9e2/shiboken6-6.10.0-cp39-abi3-win_amd64.whl", hash = "sha256:0bc5631c1bf150cbef768a17f5f289aae1cb4db6c6b0c19b2421394e27783717", size = 1234227, upload-time = "2025-10-08T09:49:12.774Z" },
     { url = "https://files.pythonhosted.org/packages/dd/e5/0ab862005ea87dc8647ba958a3099b3b0115fd6491c65da5c5a0f6364db1/shiboken6-6.10.0-cp39-abi3-win_arm64.whl", hash = "sha256:dfc4beab5fec7dbbebbb418f3bf99af865d6953aa0795435563d4cbb82093b61", size = 1794775, upload-time = "2025-10-08T09:49:14.641Z" },
+]
+
+[[package]]
+name = "toon-python"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fc/c6/104805c4efa3853c875bd8d2f199e06d383cd307bbdc788f668c4178ce2d/toon_python-0.1.2.tar.gz", hash = "sha256:10420d622c043cb5d9d444f92524731ded4b536fb77194c998855bcda12be3d2", size = 85215, upload-time = "2025-10-27T14:58:20.168Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f8/69/017f9f27f0e6b24871ecb73cdc675231c472d4b50a89be0b6779441862cd/toon_python-0.1.2-py3-none-any.whl", hash = "sha256:0582272edbb7b244c4931f80c679c2867c7d0a64faa53f16c355fcc3b8076d8f", size = 23680, upload-time = "2025-10-27T14:58:18.627Z" },
 ]
 
 [[package]]

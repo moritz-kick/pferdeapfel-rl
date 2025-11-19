@@ -22,6 +22,7 @@ from src.game.game import Game
 from src.game.rules import Rules
 from src.players.human import HumanPlayer
 from src.players.random import RandomPlayer
+from src.utils.toon_parser import parse_toon
 
 
 class BoardWidget(QWidget):
@@ -515,7 +516,10 @@ class GameWindow(QWidget):
         """Load and replay a game log."""
         try:
             with open(log_path) as f:
-                data = json.load(f)
+                if log_path.suffix == ".toon":
+                    data = parse_toon(f.read())
+                else:
+                    data = json.load(f)
 
             # Reset game to Classic Mode (Mode 3)
             self.mode_combo.setCurrentIndex(2)

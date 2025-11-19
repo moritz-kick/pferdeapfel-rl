@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import random
+import toon_python
 from pathlib import Path
 from typing import Any, Optional
 
@@ -111,17 +111,17 @@ class Game:
         return legal_moves
 
     def save_log(self, log_dir: Path) -> Optional[Path]:
-        """Save game log to a JSON file. Returns the path if successful."""
+        """Save game log to a TOON file. Returns the path if successful."""
         if not self.logging or not self.log_data:
             return None
 
         # Find next available log file number
         log_dir.mkdir(parents=True, exist_ok=True)
         log_num = 1
-        while (log_dir / f"game_{log_num:03d}.json").exists():
+        while (log_dir / f"game_{log_num:03d}.toon").exists():
             log_num += 1
 
-        log_path = log_dir / f"game_{log_num:03d}.json"
+        log_path = log_dir / f"game_{log_num:03d}.toon"
         log_content = {
             "white_player": self.white_player.name,
             "black_player": self.black_player.name,
@@ -131,6 +131,6 @@ class Game:
         }
 
         with open(log_path, "w") as f:
-            json.dump(log_content, f, indent=2)
+            f.write(toon_python.encode(log_content))
 
         return log_path
