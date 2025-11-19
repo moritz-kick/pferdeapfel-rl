@@ -220,6 +220,7 @@ class BoardWidget(QWidget):
                     painter.setPen(QPen(QColor(255, 255, 255), 2))
                     painter.setBrush(QColor(255, 255, 255))
                     painter.drawEllipse(x + 10, y + 10, self.SQUARE_SIZE - 20, self.SQUARE_SIZE - 20)
+                    painter.setPen(QPen(QColor(0, 0, 0), 2))
                     painter.drawText(
                         x + self.SQUARE_SIZE // 2 - 5,
                         y + self.SQUARE_SIZE // 2 + 5,
