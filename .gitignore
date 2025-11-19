@@ -10,6 +10,7 @@ data/
 
 # Logs
 logs/
+debug_logs/
 
 # Models
 models/
