@@ -511,11 +511,69 @@ class GameWindow(QWidget):
         elif event.key() == Qt.Key.Key_3:
             self.mode_combo.setCurrentIndex(2)
 
+    def load_game_log(self, log_path: Path) -> None:
+        """Load and replay a game log."""
+        try:
+            with open(log_path) as f:
+                data = json.load(f)
+
+            # Reset game to Classic Mode (Mode 3)
+            self.mode_combo.setCurrentIndex(2)
+            self.new_game()
+
+            moves = data.get("moves", [])
+            if not moves:
+                QMessageBox.information(self, "Log Loaded", "Log contains no moves.")
+                return
+
+            # Determine starting player from the first move
+            first_move_turn = moves[0]["turn"]
+            if self.game.current_player != first_move_turn:
+                self.game.switch_turn()
+
+            # Replay moves
+            replayed_count = 0
+            for move in moves:
+                player_name = move["turn"]
+                move_to = tuple(move["move_to"])
+                extra_apple = tuple(move["extra_apple"]) if move["extra_apple"] else None
+
+                # Ensure correct player
+                if self.game.current_player != player_name:
+                    # Force turn switch if out of sync
+                    print(f"Warning: Turn mismatch. Log: {player_name}, Game: {self.game.current_player}")
+                    self.game.switch_turn()
+
+                success = self.game.make_move(move_to, extra_apple)
+                if not success:
+                    print(f"Failed to replay move {replayed_count + 1}: {move}")
+                    QMessageBox.warning(self, "Replay Error", f"Failed to replay move {replayed_count + 1}")
+                    break
+                replayed_count += 1
+
+            self.update_ui()
+            QMessageBox.information(self, "Log Loaded", f"Successfully replayed {replayed_count} moves.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Load Error", f"Failed to load log: {e}")
+
 
 def main() -> None:
     """Main entry point for the GUI."""
-    app = QApplication(sys.argv)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Pferdeäpfel Game GUI")
+    parser.add_argument("--load-log", type=Path, help="Path to game log to load")
+    # Use parse_known_args because QApplication also handles some args
+    args, unknown = parser.parse_known_args()
+
+    app = QApplication(sys.argv[:1] + unknown)
     window = GameWindow()
+
+    if args.load_log:
+        # Use QTimer to load after window is shown, to ensure dialogs appear correctly
+        QTimer.singleShot(100, lambda: window.load_game_log(args.load_log))
+
     window.show()
     sys.exit(app.exec())
 

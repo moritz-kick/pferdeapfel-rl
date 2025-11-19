@@ -23,6 +23,7 @@ class Game:
         self.logging = logging
         self.log_data: list[dict[str, Any]] = []
         self.current_player: str = random.choice(["white", "black"])
+        self.starting_player = self.current_player
         self.winner: Optional[str] = None
         self.game_over = False
 
@@ -124,7 +125,7 @@ class Game:
         log_content = {
             "white_player": self.white_player.name,
             "black_player": self.black_player.name,
-            "starting_player": self.current_player,
+            "starting_player": self.starting_player,
             "winner": self.winner,
             "moves": self.log_data,
         }
