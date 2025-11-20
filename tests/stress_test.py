@@ -1,10 +1,10 @@
 import time
-import sys
+
 from src.game.game import Game
 from src.players.random import RandomPlayer
 
 
-def run_stress_test(num_games=100):
+def run_stress_test(num_games: int = 100) -> None:
     print(f"Starting stress test: {num_games} games (Random vs Random)...")
 
     modes = [1, 2, 3]
@@ -12,7 +12,7 @@ def run_stress_test(num_games=100):
     for mode in modes:
         print(f"\n=== Testing Mode {mode} ===")
         total_moves = 0
-        total_time = 0
+        total_time = 0.0
         games_completed = 0
         errors = 0
 

@@ -1,9 +1,10 @@
 import json
-import toon_python
 from pathlib import Path
 
+import toon_python
 
-def migrate_logs():
+
+def migrate_logs() -> None:
     log_dirs = [Path("debug_logs"), Path("data/logs/game")]
 
     for log_dir in log_dirs:

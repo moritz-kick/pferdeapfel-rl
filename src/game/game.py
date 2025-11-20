@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 import random
-import toon_python
 from pathlib import Path
 from typing import Any, Optional
+
+import toon_python
 
 from src.game.board import Board
 from src.game.rules import Rules

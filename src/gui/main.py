@@ -559,6 +559,7 @@ class GameWindow(QWidget):
             # Reset game to Classic Mode (Mode 3)
             self.mode_combo.setCurrentIndex(2)
             self.new_game()
+            assert self.game is not None
 
             moves = data.get("moves", [])
             if not moves:

@@ -57,7 +57,7 @@ def parse_toon(content: str) -> dict[str, Any]:
             key = key_part.split("[")[0]
             is_list = "[" in key_part
 
-            new_container = [] if is_list else {}
+            new_container: list[Any] | dict[str, Any] = [] if is_list else {}
 
             if isinstance(current_container, dict):
                 current_container[key] = new_container

@@ -2,7 +2,7 @@
 
 import logging
 import random
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from src.game.board import Board
 from src.players.base import Player
@@ -60,7 +60,6 @@ class RandomPlayer(Player):
                     sim_grid = board.grid.copy()
                     sim_brown_remaining = board.brown_apples_remaining
                     sim_golden_remaining = board.golden_apples_remaining
-                    sim_golden_phase = board.golden_phase_started
 
                     current_pos = board.get_horse_position(self.name.lower())  # "white" or "black"
 
@@ -70,7 +69,6 @@ class RandomPlayer(Player):
                     else:
                         mandatory_apple = Board.GOLDEN_APPLE
                         sim_golden_remaining -= 1
-                        sim_golden_phase = True
 
                     sim_grid[current_pos[0], current_pos[1]] = mandatory_apple
 
@@ -101,7 +99,13 @@ class RandomPlayer(Player):
                     # This means we need to check White's legal moves on the simulated board.
 
                     # Helper to get legal moves on a raw grid
-                    def get_simulated_legal_moves(grid, player_color, white_p, black_p, mode):
+                    def get_simulated_legal_moves(
+                        grid: Any,
+                        player_color: str,
+                        white_p: Optional[Tuple[int, int]],
+                        black_p: Optional[Tuple[int, int]],
+                        mode: int,
+                    ) -> list[Tuple[int, int]]:
                         moves = []
                         p_pos = white_p if player_color == "white" else black_p
                         if p_pos is None:
@@ -119,8 +123,8 @@ class RandomPlayer(Player):
                         return moves
 
                     # Determine simulated positions
-                    sim_white_pos = board.white_pos
-                    sim_black_pos = board.black_pos
+                    sim_white_pos: Optional[Tuple[int, int]] = board.white_pos
+                    sim_black_pos: Optional[Tuple[int, int]] = board.black_pos
 
                     if self.name.lower() == "white":
                         sim_white_pos = move_to
