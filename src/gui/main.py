@@ -4,7 +4,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen
@@ -21,8 +21,10 @@ from PySide6.QtWidgets import (
 
 from src.game.game import Game
 from src.game.rules import Rules
+from src.players.base import Player
 from src.players.human import HumanPlayer
 from src.players.random import RandomPlayer
+from src.players.rl import discover_rl_players
 from src.utils.debug_util import write_debug_log
 from src.utils.toon_parser import parse_toon
 
@@ -256,6 +258,8 @@ class GameWindow(QWidget):
         """Initialize the game window."""
         super().__init__()
         self.game: Optional[Game] = None
+        self.rl_player_classes = discover_rl_players()
+        self.player_factories = self._build_player_factories()
         self.log_dir = Path("data/logs/game")
         self.debug_log_dir = Path("data/logs/debug")
         self.init_ui()
@@ -275,6 +279,19 @@ class GameWindow(QWidget):
 
         event.accept()
 
+    def _build_player_factories(self) -> dict[str, Callable[[str], HumanPlayer | RandomPlayer]]:
+        """Return mapping of selector key to player factory."""
+        factories: dict[str, Callable[[str], HumanPlayer | RandomPlayer]] = {
+            "human": lambda color: HumanPlayer(color.capitalize()),
+            "random": lambda color: RandomPlayer(color.capitalize()),
+        }
+
+        for cls in self.rl_player_classes.values():
+            label = getattr(cls, "DISPLAY_NAME", cls.__name__).lower()
+            factories[label] = lambda color, cls=cls: cls(color)
+
+        return factories
+
     def init_ui(self) -> None:
         """Initialize the UI components."""
         self.setWindowTitle("Pferdeäpfel")
@@ -286,13 +303,13 @@ class GameWindow(QWidget):
         player_layout = QHBoxLayout()
         player_layout.addWidget(QLabel("White:"))
         self.white_combo = QComboBox()
-        self.white_combo.addItems(["human", "random"])
+        self.white_combo.addItems(list(self.player_factories.keys()))
         self.white_combo.currentTextChanged.connect(self.on_player_changed)
         player_layout.addWidget(self.white_combo)
 
         player_layout.addWidget(QLabel("Black:"))
         self.black_combo = QComboBox()
-        self.black_combo.addItems(["human", "random"])
+        self.black_combo.addItems(list(self.player_factories.keys()))
         self.black_combo.currentTextChanged.connect(self.on_player_changed)
         player_layout.addWidget(self.black_combo)
 
@@ -380,19 +397,16 @@ class GameWindow(QWidget):
             except Exception:
                 pass  # Use defaults
 
-    def create_players(
-        self,
-    ) -> tuple[HumanPlayer | RandomPlayer, HumanPlayer | RandomPlayer]:
+    def create_players(self) -> tuple[Player, Player]:
         """Create player instances based on combo box selections."""
         white_type = self.white_combo.currentText()
         black_type = self.black_combo.currentText()
 
-        white_player: HumanPlayer | RandomPlayer = (
-            HumanPlayer("White") if white_type == "human" else RandomPlayer("White")
-        )
-        black_player: HumanPlayer | RandomPlayer = (
-            HumanPlayer("Black") if black_type == "human" else RandomPlayer("Black")
-        )
+        white_factory = self.player_factories.get(white_type, self.player_factories["human"])
+        black_factory = self.player_factories.get(black_type, self.player_factories["human"])
+
+        white_player = white_factory("white")
+        black_player = black_factory("black")
 
         return white_player, black_player
 
@@ -485,7 +499,7 @@ class GameWindow(QWidget):
         # Handle AI player moves
         if not self.game.game_over:
             current_player = self.game.get_current_player()
-            if isinstance(current_player, RandomPlayer):
+            if not isinstance(current_player, HumanPlayer):
                 # Use QTimer to allow UI to update before AI move
                 QTimer.singleShot(100, self.make_ai_move)
 
@@ -495,7 +509,7 @@ class GameWindow(QWidget):
             return
 
         current_player = self.game.get_current_player()
-        if not isinstance(current_player, RandomPlayer):
+        if isinstance(current_player, HumanPlayer):
             return
 
         try:

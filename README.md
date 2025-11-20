@@ -43,6 +43,12 @@ Players alternate turns. On each turn:
 - The game emphasizes strategy: White aims to survive long enough to deplete brown apples, while Black blocks White's knight moves aggressively.
 - This implementation will focus on digital simulation, ignoring physical aspects like apples rolling.
 
-For development details, see [project_plan.md](documentation/project_plan.md).
-For detailed rules in german, refer to [original_rules_de.md](documentation/original_rules_de.md).
-For detailed rules in english with the differened modes, refer to [rules_en.md](documentation/rules_en.md).
+## RL (Milestone 2)
+- Gymnasium environment for mode 2 lives at `src/env/pferdeapfel_env.py` (Discrete(64) actions, flattened observations with positions/turn/flags).
+- PPO training config is in `src/training/config.yaml`; run training with `python -m src.training.ppo_train` (models saved to `data/models/`).
+- DQN-based RL player wrapper is available for GUI/evaluations via the new player dropdown option (`dqn`).
+- Evaluate an RL model against the random baseline with `python -m src.evaluation.eval_script --model <path> --games 20`; results are written to `src/evaluation/results.csv`.
+- `src/gui/dashboard.py` plots win rates from the evaluation CSV.
+- RL I/O smoke tests and logs land in `tests/test_rl_io.py` and `data/logs/rl_player/`.
+
+For development details, see [project_plan.md](documentation/project_plan.md). For detailed rules in german, refer to [original_rules_de.md](documentation/original_rules_de.md). For detailed rules in english with the differened modes, refer to [rules_en.md](documentation/rules_en.md).

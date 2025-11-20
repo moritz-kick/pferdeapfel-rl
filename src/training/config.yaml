@@ -1,0 +1,11 @@
+trainer:
+  total_timesteps: 100000
+  learning_rate: 0.0003
+  n_steps: 256
+  batch_size: 64
+  gamma: 0.99
+  tensorboard_log: "data/logs/rl"
+  save_path: "data/models/ppo_pferdeapfel"
+env:
+  agent_color: "black"
+  opponent_policy: "random"
