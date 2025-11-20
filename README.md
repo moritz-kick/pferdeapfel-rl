@@ -43,4 +43,6 @@ Players alternate turns. On each turn:
 - The game emphasizes strategy: White aims to survive long enough to deplete brown apples, while Black blocks White's knight moves aggressively.
 - This implementation will focus on digital simulation, ignoring physical aspects like apples rolling.
 
-For development details, see [project_plan.md](project_plan.md).
+For development details, see [project_plan.md](documentation/project_plan.md).
+For detailed rules in german, refer to [original_rules_de.md](documentation/original_rules_de.md).
+For detailed rules in english with the differened modes, refer to [rules_en.md](documentation/rules_en.md).
