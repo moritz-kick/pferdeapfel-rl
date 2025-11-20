@@ -1,5 +1,6 @@
 {
   "white": "human",
   "black": "random",
-  "logs": true
+  "logs": true,
+  "mode": 2
 }

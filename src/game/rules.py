@@ -190,14 +190,17 @@ class Rules:
                     return False
 
                 # Restriction: Cannot block White's last escape route
-                temp_apple = Board.BROWN_APPLE
-                board.grid[extra_row, extra_col] = temp_apple
-                white_legal = Rules.get_legal_knight_moves(board, "white")
-                board.grid[extra_row, extra_col] = Board.EMPTY
+                # Logic: If the apple is placed on a square that is a legal move for White,
+                # AND it is the ONLY legal move for White, then it's blocking the last escape.
 
-                if len(white_legal) == 0:
-                    Rules._rollback(board, state_snapshot)
-                    return False
+                # 1. Check if the apple placement is on a square White could move to
+                white_legal_before = Rules.get_legal_knight_moves(board, "white")
+
+                if (extra_row, extra_col) in white_legal_before:
+                    # 2. If it is a legal move, check if it was the ONLY one
+                    if len(white_legal_before) == 1:
+                        Rules._rollback(board, state_snapshot)
+                        return False
 
                 optional_apple = Board.BROWN_APPLE
                 if board.brown_apples_remaining > 0:

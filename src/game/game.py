@@ -72,8 +72,22 @@ class Game:
                 )
 
             # Check win condition
-            self.winner = Rules.check_win_condition(self.board, last_mover=self.current_player)
-            if self.winner:
+            win_result = Rules.check_win_condition(self.board, last_mover=self.current_player)
+
+            # Special handling for Mode 3 Golden Phase
+            if self.board.mode == 3 and self.board.golden_phase_started and self.winner is None:
+                self.winner = "white"
+                logger.info("Golden Phase started! White wins the match, but game continues for points.")
+
+            if win_result:
+                # Game actually ends (Capture, Immobilization, or all Golden Apples used)
+                self.winner = (
+                    win_result  # Ensure winner is set correctly (could be Black if they capture in Golden Phase?)
+                )
+                # Wait, if White already won, Black can't win. But if Black captures, game ends.
+                # Rules: "If Black captures White... White gets 24 points" (if Golden Phase started)
+                # check_win_condition handles this logic and returns "white" or "black".
+
                 logger.info(f"Game over! Winner: {self.winner}")
                 self.game_over = True
             else:

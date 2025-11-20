@@ -1,6 +1,7 @@
 """Main GUI for Pferdeäpfel game using PySide6."""
 
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -268,9 +269,9 @@ class GameWindow(QWidget):
             if isinstance(self.white_player, RandomPlayer) and isinstance(self.black_player, RandomPlayer):
                 try:
                     log_path = write_debug_log(self.game, self.debug_log_dir)
-                    print(f"Debug log written to: {log_path}")
+                    logging.info(f"Debug log written to: {log_path}")
                 except Exception as e:
-                    print(f"Failed to write debug log: {e}")
+                    logging.error(f"Failed to write debug log: {e}")
 
         event.accept()
 
@@ -363,6 +364,7 @@ class GameWindow(QWidget):
                     white = config.get("white", "human")
                     black = config.get("black", "random")
                     logs = config.get("logs", True)
+                    mode = config.get("mode", 3)  # Default to 3 (Classic)
 
                     idx = self.white_combo.findText(white)
                     if idx >= 0:
@@ -371,6 +373,10 @@ class GameWindow(QWidget):
                     if idx >= 0:
                         self.black_combo.setCurrentIndex(idx)
                     self.logging_button.setChecked(logs)
+
+                    # Set mode (1 -> index 0, 2 -> index 1, 3 -> index 2)
+                    if 1 <= mode <= 3:
+                        self.mode_combo.setCurrentIndex(mode - 1)
             except Exception:
                 pass  # Use defaults
 
@@ -493,26 +499,26 @@ class GameWindow(QWidget):
             return
 
         try:
-            print(f"[GUI] make_ai_move: {current_player.name}'s turn")
+            logging.debug(f"[GUI] make_ai_move: {current_player.name}'s turn")
             legal_moves = self.game.get_legal_moves()
-            print(f"[GUI] Legal moves: {len(legal_moves)}")
+            logging.debug(f"[GUI] Legal moves: {len(legal_moves)}")
 
             if not legal_moves:
-                print(f"[GUI] No legal moves for {current_player.name}")
+                logging.debug(f"[GUI] No legal moves for {current_player.name}")
                 return
 
-            print(f"[GUI] Getting move from {current_player.name}...")
+            logging.debug(f"[GUI] Getting move from {current_player.name}...")
             move_to, extra_apple = current_player.get_move(self.game.board, legal_moves)
-            print(f"[GUI] {current_player.name} chose: move_to={move_to}, extra_apple={extra_apple}")
+            logging.debug(f"[GUI] {current_player.name} chose: move_to={move_to}, extra_apple={extra_apple}")
 
             success = self.game.make_move(move_to, extra_apple)
-            print(f"[GUI] Move success: {success}")
+            logging.debug(f"[GUI] Move success: {success}")
 
             if success:
                 self.board_widget.update_legal_moves()
                 self.update_ui()
         except Exception as e:
-            print(f"[GUI ERROR] AI move failed: {e}")
+            logging.error(f"[GUI ERROR] AI move failed: {e}")
             import traceback
 
             traceback.print_exc()
@@ -574,12 +580,12 @@ class GameWindow(QWidget):
                 # Ensure correct player
                 if self.game.current_player != player_name:
                     # Force turn switch if out of sync
-                    print(f"Warning: Turn mismatch. Log: {player_name}, Game: {self.game.current_player}")
+                    logging.warning(f"Warning: Turn mismatch. Log: {player_name}, Game: {self.game.current_player}")
                     self.game.switch_turn()
 
                 success = self.game.make_move(move_to, extra_apple)
                 if not success:
-                    print(f"Failed to replay move {replayed_count + 1}: {move}")
+                    logging.error(f"Failed to replay move {replayed_count + 1}: {move}")
                     QMessageBox.warning(self, "Replay Error", f"Failed to replay move {replayed_count + 1}")
                     break
                 replayed_count += 1
@@ -594,11 +600,10 @@ class GameWindow(QWidget):
 def main() -> None:
     """Main entry point for the GUI."""
     import argparse
-    import logging
 
     # Configure logging
     logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"
+        level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"
     )
 
     parser = argparse.ArgumentParser(description="Pferdeäpfel Game GUI")
