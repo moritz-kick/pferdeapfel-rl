@@ -98,7 +98,7 @@ repos:
 ```
 
 #### Milestone 1: Simple Game Implementation
-1. Implement core game in src/game/: board.py for state (numpy array for board), rules.py for moves/validation/win checks.
+1. Implement core game in src/game/: board.py for state (numpy array for board), rules.py for moves/validation/win checks with the 3 modes.
 2. Create player classes in src/players/: base.py with abstract methods (e.g., get_move(state)), human.py (input-based), random.py (choose random legal move).
 3. Build GUI in src/gui/: Use PySide6 for 8x8 grid display.
    - Show current state: Board with horses, blocked squares, apple counts, turn indicator.
@@ -114,22 +114,23 @@ repos:
 6. Run/test: Play human vs random, verify features.
 
 #### Milestone 2: RL Environment and Basic Training
-1. Create Gym env in src/env/pferdeapfel_env.py: Inherit from gymnasium.Env.
+1. We are only looking for mode 2, the trailing mode game. Mode 1 and 2 are for Milestone 3.
+2. Create Gym env in src/env/pferdeapfel_env.py: Inherit from gymnasium.Env.
    - Observation space: Flattened state (board flat + positions + turn + brown_left + golden_flag).
    - Action space: Discrete or MultiDiscrete (move index + optional placement coords or skip).
    - step(): Handle move + add apple + optional place, check validity, return obs/reward/done.
    - Reward: win/loss, illegal move (game over, penalty), legal move (small reward).
    - Optional: Support rendering for GUI integration.
-2. First RL player in src/players/rl/dqn_rl.py: Wrap SB3 model, load/save models.
-3. I/O check script: tests/test_rl_io.py – Input sample states, log actions/rewards to data/logs/rl_player/.
-4. Training in src/training/:
+3. First RL player in src/players/rl/dqn_rl.py: Wrap SB3 model, load/save models.
+4. I/O check script: tests/test_rl_io.py – Input sample states, log actions/rewards to data/logs/rl_player/.
+5. Training in src/training/:
    - config.yaml: Params like learning_rate, n_steps, batch_size.
    - ppo_train.py: Load config, create env, train PPO, save model to data/models/, use TensorBoard for logging (e.g., callbacks).
-5. Integrate RL to GUI: Scan src/players/rl/ for subclasses, add to dropdown; load defaults from gui/config.json (e.g., {"white": "human", "black": "random", "logs": true}).
-6. Evaluation: In src/evaluation/eval_script.py – Run N games RL vs random, compute win rate, save to CSV.
-7. Dashboard: src/gui/dashboard.py – Use matplotlib to plot win rates, viewable in GUI or separate.
-8. (Added) Tests for env (valid spaces, steps).
-9. Update README.md
+6. Integrate RL to GUI: Scan src/players/rl/ for subclasses, add to dropdown; load defaults from gui/config.json (e.g., {"white": "human", "black": "random", "logs": true}).
+7. Evaluation: In src/evaluation/eval_script.py – Run N games RL vs random, compute win rate, save to CSV.
+8. Dashboard: src/gui/dashboard.py – Use matplotlib to plot win rates, viewable in GUI or separate.
+9. (Added) Tests for env (valid spaces, steps).
+10. Update README.md
 
 #### Milestone 3: Advanced Training and Evaluation
 1. Optuna integration: optuna_tune.py – Define objective func to train/tune hypers, run studies.
@@ -142,3 +143,4 @@ repos:
 3. Integrate eval results to dashboard for visualization (heatmaps of win rates).
 4. Add best move visualization to GUI
 5. Update README.md
+6. After we fully implemented everything for mode 2, implement everything from Milestone 2 & 3 for mode 1 and 3.
