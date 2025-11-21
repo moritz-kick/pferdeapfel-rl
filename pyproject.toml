@@ -9,12 +9,14 @@ dependencies = [
     "toon-python>=0.1.2",
     "gymnasium>=0.29.0",
     "stable-baselines3[extra]>=2.3.0",
+    "sb3-contrib>=2.3.0",
     "torch>=2.2.0",
     "tensorboard>=2.14.0",
     "matplotlib>=3.8.0",
     "pyyaml>=6.0",
     "polars>=0.20.0",
     "optuna>=3.6.0",
+    "pytest>=9.0.1",
 ]
 
 [project.optional-dependencies]
@@ -29,6 +31,7 @@ gui = "scripts.run_gui:main"
 train-ppo = "src.training.ppo_train:main"
 eval-rl = "src.evaluation.eval_script:main"
 dashboard = "src.gui.dashboard:plot_win_rates"
+tb-summary = "src.training.tb_summary:main"
 
 [tool.mypy]
 python_version = "3.12"

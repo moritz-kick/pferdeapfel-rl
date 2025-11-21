@@ -3,6 +3,7 @@
 import json
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -25,6 +26,7 @@ from src.players.base import Player
 from src.players.human import HumanPlayer
 from src.players.random import RandomPlayer
 from src.players.rl import discover_rl_players
+from src.players.rl.ppo_rl import PPOPlayer
 from src.utils.debug_util import write_debug_log
 from src.utils.toon_parser import parse_toon
 
@@ -257,12 +259,17 @@ class GameWindow(QWidget):
     def __init__(self) -> None:
         """Initialize the game window."""
         super().__init__()
+        self.project_root = Path(__file__).resolve().parents[2]
         self.game: Optional[Game] = None
         self.rl_player_classes = discover_rl_players()
         self.player_factories = self._build_player_factories()
+        self.ppo_label = getattr(PPOPlayer, "DISPLAY_NAME", "ppo").lower()
+        self.available_ppo_models: list[Path] = []
+        self._suppress_model_signals = False
         self.log_dir = Path("data/logs/game")
         self.debug_log_dir = Path("data/logs/debug")
         self.init_ui()
+        self._refresh_ppo_model_options()
         self.load_config()
         self.new_game()
 
@@ -279,9 +286,9 @@ class GameWindow(QWidget):
 
         event.accept()
 
-    def _build_player_factories(self) -> dict[str, Callable[[str], HumanPlayer | RandomPlayer]]:
+    def _build_player_factories(self) -> dict[str, Callable[[str], Player]]:
         """Return mapping of selector key to player factory."""
-        factories: dict[str, Callable[[str], HumanPlayer | RandomPlayer]] = {
+        factories: dict[str, Callable[[str], Player]] = {
             "human": lambda color: HumanPlayer(color.capitalize()),
             "random": lambda color: RandomPlayer(color.capitalize()),
         }
@@ -291,6 +298,116 @@ class GameWindow(QWidget):
             factories[label] = lambda color, cls=cls: cls(color)
 
         return factories
+
+    def _discover_ppo_models(self) -> list[Path]:
+        """Return PPO model zip files sorted by most recent first."""
+        roots = [
+            self.project_root / "data" / "models" / "ppo_pferdeapfel",
+            self.project_root / "data" / "models",
+        ]
+        candidates: list[Path] = []
+
+        for root in roots:
+            if root.is_file() and root.suffix == ".zip":
+                candidates.append(root.resolve())
+            elif root.is_dir():
+                candidates.extend(p.resolve() for p in root.rglob("*.zip"))
+
+        # Deduplicate and sort by modified time (desc)
+        seen: set[Path] = set()
+        unique: list[Path] = []
+        for path in candidates:
+            if path not in seen and path.exists():
+                seen.add(path)
+                unique.append(path)
+
+        def _mtime_or_zero(path: Path) -> float:
+            try:
+                return path.stat().st_mtime
+            except OSError:
+                return 0.0
+
+        unique.sort(key=_mtime_or_zero, reverse=True)
+        return unique
+
+    def _format_model_label(self, path: Path) -> str:
+        """Return a user-friendly label for a PPO model path."""
+        try:
+            display_path = path.relative_to(self.project_root)
+        except ValueError:
+            display_path = path
+
+        try:
+            timestamp = datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+            return f"{display_path} ({timestamp})"
+        except OSError:
+            return str(display_path)
+
+    def _refresh_ppo_model_options(self) -> None:
+        """Reload PPO model dropdown options."""
+        self.available_ppo_models = self._discover_ppo_models()
+        options: list[tuple[str, Optional[str]]] = [("Auto (latest available)", None)]
+        options.extend((self._format_model_label(path), str(path)) for path in self.available_ppo_models)
+
+        def _set_items(combo: QComboBox, options_list: list[tuple[str, Optional[str]]]) -> None:
+            current_data = combo.currentData()
+            combo.blockSignals(True)
+            combo.clear()
+            for label, data in options_list:
+                combo.addItem(label, userData=data)
+
+            if current_data is not None:
+                idx = combo.findData(current_data)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+            combo.blockSignals(False)
+
+        _set_items(self.white_model_combo, options)
+        _set_items(self.black_model_combo, options)
+        self._update_model_selector_enabled()
+
+    def _selected_model_path(self, combo: QComboBox) -> Optional[Path]:
+        """Return model path from a combo box selection."""
+        data = combo.currentData()
+        if not data:
+            return None
+        return Path(str(data))
+
+    def _set_model_selection(self, combo: QComboBox, path_value: Optional[str]) -> None:
+        """Set combo selection to provided model path if present."""
+        self._suppress_model_signals = True
+        try:
+            if not path_value:
+                combo.setCurrentIndex(0)
+                return
+
+            existing_idx = combo.findData(path_value)
+            if existing_idx == -1:
+                combo.addItem(str(path_value), userData=path_value)
+                existing_idx = combo.count() - 1
+            combo.setCurrentIndex(existing_idx)
+        finally:
+            self._suppress_model_signals = False
+
+    def _update_model_selector_enabled(self) -> None:
+        """Enable model selectors only when PPO is selected for that side."""
+        white_uses_ppo = self.white_combo.currentText() == self.ppo_label
+        black_uses_ppo = self.black_combo.currentText() == self.ppo_label
+
+        for label_widget, combo, enabled in [
+            (self.white_model_label, self.white_model_combo, white_uses_ppo),
+            (self.black_model_label, self.black_model_combo, black_uses_ppo),
+        ]:
+            label_widget.setEnabled(enabled)
+            combo.setEnabled(enabled)
+
+    def _build_player_instance(self, player_type: str, color: str, model_path: Optional[Path]) -> Player:
+        """Create a player based on selector and optional PPO model path."""
+        if player_type == self.ppo_label:
+            return PPOPlayer(color, model_path=model_path)
+
+        factory = self.player_factories.get(player_type, self.player_factories["human"])
+        return factory(color)
 
     def init_ui(self) -> None:
         """Initialize the UI components."""
@@ -315,6 +432,33 @@ class GameWindow(QWidget):
 
         player_layout.addStretch()
         layout.addLayout(player_layout)
+
+        # PPO model selection (enabled only when PPO is chosen)
+        model_layout = QHBoxLayout()
+        self.white_model_label = QLabel("White PPO model:")
+        self.white_model_combo = QComboBox()
+        self.white_model_combo.currentIndexChanged.connect(self.on_model_changed)
+        model_tooltip = (
+            "Select a PPO model archive. Enabled only when that side uses PPO; "
+            "Auto picks the newest .zip under data/models."
+        )
+        self.white_model_combo.setToolTip(model_tooltip)
+        self.white_model_label.setToolTip(model_tooltip)
+        model_layout.addWidget(self.white_model_label)
+        model_layout.addWidget(self.white_model_combo)
+
+        model_layout.addSpacing(12)
+
+        self.black_model_label = QLabel("Black PPO model:")
+        self.black_model_combo = QComboBox()
+        self.black_model_combo.currentIndexChanged.connect(self.on_model_changed)
+        self.black_model_combo.setToolTip(model_tooltip)
+        self.black_model_label.setToolTip(model_tooltip)
+        model_layout.addWidget(self.black_model_label)
+        model_layout.addWidget(self.black_model_combo)
+
+        model_layout.addStretch()
+        layout.addLayout(model_layout)
 
         # Mode selection
         mode_layout = QHBoxLayout()
@@ -389,11 +533,17 @@ class GameWindow(QWidget):
                     idx = self.black_combo.findText(black)
                     if idx >= 0:
                         self.black_combo.setCurrentIndex(idx)
+
+                    white_model = config.get("white_ppo_model")
+                    black_model = config.get("black_ppo_model")
+                    self._set_model_selection(self.white_model_combo, white_model)
+                    self._set_model_selection(self.black_model_combo, black_model)
                     self.logging_button.setChecked(logs)
 
                     # Set mode (1 -> index 0, 2 -> index 1, 3 -> index 2)
                     if 1 <= mode <= 3:
                         self.mode_combo.setCurrentIndex(mode - 1)
+                    self._update_model_selector_enabled()
             except Exception:
                 pass  # Use defaults
 
@@ -402,17 +552,22 @@ class GameWindow(QWidget):
         white_type = self.white_combo.currentText()
         black_type = self.black_combo.currentText()
 
-        white_factory = self.player_factories.get(white_type, self.player_factories["human"])
-        black_factory = self.player_factories.get(black_type, self.player_factories["human"])
+        white_model_path = self._selected_model_path(self.white_model_combo)
+        black_model_path = self._selected_model_path(self.black_model_combo)
 
-        white_player = white_factory("white")
-        black_player = black_factory("black")
+        white_player = self._build_player_instance(white_type, "white", white_model_path)
+        black_player = self._build_player_instance(black_type, "black", black_model_path)
 
         return white_player, black_player
 
     def new_game(self) -> None:
         """Start a new game."""
-        white_player, black_player = self.create_players()
+        try:
+            white_player, black_player = self.create_players()
+        except Exception as exc:
+            logging.error("Failed to create players: %s", exc)
+            QMessageBox.critical(self, "Player Error", f"Could not start a new game: {exc}")
+            return
         self.white_player = white_player
         self.black_player = black_player
         logging = self.logging_button.isChecked()
@@ -429,12 +584,23 @@ class GameWindow(QWidget):
 
     def on_player_changed(self) -> None:
         """Handle player selection change."""
+        self._update_model_selector_enabled()
         if self.game:
             self.new_game()
 
     def on_mode_changed(self) -> None:
         """Handle mode selection change."""
         self.new_game()
+
+    def on_model_changed(self) -> None:
+        """Handle PPO model selection change."""
+        if self._suppress_model_signals:
+            return
+
+        active_white = self.white_combo.currentText() == self.ppo_label
+        active_black = self.black_combo.currentText() == self.ppo_label
+        if self.game and (active_white or active_black):
+            self.new_game()
 
     def on_logging_toggled(self, checked: bool) -> None:
         """Handle logging toggle."""
