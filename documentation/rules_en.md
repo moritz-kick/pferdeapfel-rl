@@ -37,7 +37,7 @@ This mode recreates the original game (*Pferdeäppel*) with its asymmetric win c
   - White moves first.
 
 ### Turn Sequence
-To ensure logical consistency regarding the "Draw" condition, the turn structure is strictly defined as follows:
+To ensure logical consistency regarding the "Draw" condition, the turn structure is strictly defined as follows (and only Black is allowed to capture; White landing on Black’s square is illegal):
 
 1. **Mandatory Placement:**
    Before moving, the active player places one brown apple on the square their horse currently occupies.
