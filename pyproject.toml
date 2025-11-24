@@ -8,6 +8,7 @@ dependencies = [
     "PySide6>=6.5.0",
     "toon-python>=0.1.2",
     "gymnasium>=0.29.0",
+    "shimmy>=1.3.0",
     "stable-baselines3[extra]>=2.3.0",
     "sb3-contrib>=2.3.0",
     "torch>=2.2.0",

@@ -27,6 +27,7 @@ from src.players.greedy import GreedyPlayer
 from src.players.human import HumanPlayer
 from src.players.random import RandomPlayer
 from src.players.rl import discover_rl_players
+from src.players.rl.ppo_player import PPOPlayer as RLPPOPlayer
 from src.utils.debug_util import write_debug_log
 from src.utils.toon_parser import parse_toon
 
@@ -38,26 +39,6 @@ class MCTSPlayer(Player):
     """Placeholder for MCTS Player.
     Should be implemented in a new file like Human & Random.
     """
-
-    def get_move(
-        self, board: Any, legal_moves: list[tuple[int, int]]
-    ) -> tuple[tuple[int, int], Optional[tuple[int, int]]]:
-        """Placeholder implementation."""
-        if not legal_moves:
-            return (-1, -1), None
-        return legal_moves[0], None
-
-
-class PPOPlayer(Player):
-    """Placeholder for PPO Player.
-    Should be implemented in a new file like Human & Random.
-    """
-
-    DISPLAY_NAME = "PPO"
-
-    def __init__(self, color: str, model_path: Optional[Path] = None) -> None:
-        super().__init__(color)
-        self.model_path = model_path
 
     def get_move(
         self, board: Any, legal_moves: list[tuple[int, int]]
@@ -299,8 +280,8 @@ class GameWindow(QWidget):
         self.project_root = Path(__file__).resolve().parents[2]
         self.game: Optional[Game] = None
         self.rl_player_classes = discover_rl_players()
+        self.ppo_label = getattr(RLPPOPlayer, "DISPLAY_NAME", "ppo").lower()
         self.player_factories = self._build_player_factories()
-        self.ppo_label = getattr(PPOPlayer, "DISPLAY_NAME", "ppo").lower()
         self.available_ppo_models: list[Path] = []
         self._suppress_model_signals = False
         self.log_dir = Path("data/logs/game")
@@ -330,11 +311,14 @@ class GameWindow(QWidget):
             "random": lambda color: RandomPlayer(color.capitalize()),
             "greedy": lambda color: GreedyPlayer(color),
             "mcts": lambda color: MCTSPlayer(color),
-            "ppo": lambda color: PPOPlayer(color),
+            self.ppo_label: lambda color: self._build_ppo_player(color, None),
         }
 
         for cls in self.rl_player_classes.values():
             label = getattr(cls, "DISPLAY_NAME", cls.__name__).lower()
+            if label == self.ppo_label:
+                # PPO is wired manually to support model selection.
+                continue
             factories[label] = lambda color, cls=cls: cls(color)
 
         return factories
@@ -344,6 +328,8 @@ class GameWindow(QWidget):
         roots = [
             self.project_root / "data" / "models" / "ppo_pferdeapfel",
             self.project_root / "data" / "models",
+            self.project_root / "models" / "ppo",
+            self.project_root / "models",
         ]
         candidates: list[Path] = []
 
@@ -444,10 +430,25 @@ class GameWindow(QWidget):
     def _build_player_instance(self, player_type: str, color: str, model_path: Optional[Path]) -> Player:
         """Create a player based on selector and optional PPO model path."""
         if player_type == self.ppo_label:
-            return PPOPlayer(color, model_path=model_path)
+            return self._build_ppo_player(color, model_path)
 
         factory = self.player_factories.get(player_type, self.player_factories["human"])
         return factory(color)
+
+    def _build_ppo_player(self, color: str, explicit_model: Optional[Path]) -> Player:
+        """Instantiate the PPO player using the selected or latest available model."""
+        resolved_model = self._resolve_ppo_model(explicit_model)
+        return RLPPOPlayer(color, model_path=resolved_model)
+
+    def _resolve_ppo_model(self, explicit_model: Optional[Path]) -> Path:
+        """Return the requested model path or fall back to the latest available."""
+        if explicit_model:
+            return explicit_model
+        if self.available_ppo_models:
+            return self.available_ppo_models[0]
+        raise FileNotFoundError(
+            "No PPO model archives found. Drop a .zip into data/models or models/ppo and press Restart."
+        )
 
     def init_ui(self) -> None:
         """Initialize the UI components."""
