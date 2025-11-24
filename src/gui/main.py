@@ -25,6 +25,7 @@ from src.game.rules import Rules
 from src.players.base import Player
 from src.players.human import HumanPlayer
 from src.players.random import RandomPlayer
+from src.players.mcts import MCTSPlayer
 from src.players.rl import discover_rl_players
 from src.players.rl.ppo_rl import PPOPlayer
 from src.utils.debug_util import write_debug_log
@@ -291,6 +292,7 @@ class GameWindow(QWidget):
         factories: dict[str, Callable[[str], Player]] = {
             "human": lambda color: HumanPlayer(color.capitalize()),
             "random": lambda color: RandomPlayer(color.capitalize()),
+            "mcts": lambda color: MCTSPlayer(color),
         }
 
         for cls in self.rl_player_classes.values():

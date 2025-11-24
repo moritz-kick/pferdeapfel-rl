@@ -56,6 +56,8 @@ class Board:
         new_board.brown_apples_remaining = self.brown_apples_remaining
         new_board.golden_apples_remaining = self.golden_apples_remaining
         new_board.golden_phase_started = self.golden_phase_started
+        if hasattr(self, "draw_condition_met"):
+            new_board.draw_condition_met = getattr(self, "draw_condition_met")
         new_board.move_history = copy.deepcopy(self.move_history)
         return new_board
 
