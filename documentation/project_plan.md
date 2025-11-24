@@ -114,14 +114,9 @@ repos:
 6. Run/test: Play human vs random, verify features.
 
 #### Milestone 2: RL Environment and Basic Training
-1. We are only looking for mode 2, the trailing mode game. Mode 1 and 2 are for Milestone 3.
+1. We start with mode 2, after that we will implement mode 1 and 3.
 2. Create Gym env in src/env/pferdeapfel_env.py: Inherit from gymnasium.Env.
-   - Observation space: Flattened state (board flat + positions + turn + brown_left + golden_flag).
-   - Action space: Discrete or MultiDiscrete (move index + optional placement coords or skip).
-   - step(): Handle move + add apple + optional place, check validity, return obs/reward/done.
-   - Reward: win/loss, illegal move (game over, penalty), legal move (small reward).
-   - Optional: Support rendering for GUI integration.
-3. First RL player in src/players/rl/dqn_rl.py: Wrap SB3 model, load/save models.
+3. First RL player in src/players/rl/ppo_rl.py: Wrap SB3 model, load/save models, use PPO self play to train the model and use action_masks to mask out illegal moves.
 4. I/O check script: tests/test_rl_io.py – Input sample states, log actions/rewards to data/logs/rl_player/.
 5. Training in src/training/:
    - config.yaml: Params like learning_rate, n_steps, batch_size.
