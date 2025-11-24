@@ -25,11 +25,46 @@ from src.game.rules import Rules
 from src.players.base import Player
 from src.players.human import HumanPlayer
 from src.players.random import RandomPlayer
-from src.players.mcts import MCTSPlayer
 from src.players.rl import discover_rl_players
-from src.players.rl.ppo_rl import PPOPlayer
 from src.utils.debug_util import write_debug_log
 from src.utils.toon_parser import parse_toon
+
+
+# --- Placeholder Players for deleted implementations ---
+
+
+class MCTSPlayer(Player):
+    """Placeholder for MCTS Player.
+    Should be implemented in a new file like Human & Random.
+    """
+
+    def get_move(
+        self, board: Any, legal_moves: list[tuple[int, int]]
+    ) -> tuple[tuple[int, int], Optional[tuple[int, int]]]:
+        """Placeholder implementation."""
+        if not legal_moves:
+            return (-1, -1), None
+        return legal_moves[0], None
+
+
+class PPOPlayer(Player):
+    """Placeholder for PPO Player.
+    Should be implemented in a new file like Human & Random.
+    """
+
+    DISPLAY_NAME = "PPO"
+
+    def __init__(self, color: str, model_path: Optional[Path] = None) -> None:
+        super().__init__(color)
+        self.model_path = model_path
+
+    def get_move(
+        self, board: Any, legal_moves: list[tuple[int, int]]
+    ) -> tuple[tuple[int, int], Optional[tuple[int, int]]]:
+        """Placeholder implementation."""
+        if not legal_moves:
+            return (-1, -1), None
+        return legal_moves[0], None
 
 
 class BoardWidget(QWidget):
@@ -293,6 +328,7 @@ class GameWindow(QWidget):
             "human": lambda color: HumanPlayer(color.capitalize()),
             "random": lambda color: RandomPlayer(color.capitalize()),
             "mcts": lambda color: MCTSPlayer(color),
+            "ppo": lambda color: PPOPlayer(color),
         }
 
         for cls in self.rl_player_classes.values():
@@ -572,12 +608,12 @@ class GameWindow(QWidget):
             return
         self.white_player = white_player
         self.black_player = black_player
-        logging = self.logging_button.isChecked()
+        logging_enabled = self.logging_button.isChecked()
 
         mode_text = self.mode_combo.currentText()
         mode = int(mode_text.split(":")[0])
 
-        self.game = Game(white_player, black_player, mode=mode, logging=logging)
+        self.game = Game(white_player, black_player, mode=mode, logging=logging_enabled)
         self.board_widget.pending_move = None
         self.board_widget.pending_apple = None
         self.board_widget.selected_square = None

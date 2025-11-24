@@ -1,6 +1,6 @@
 {
   "white": "human",
-  "black": "ppo",
+  "black": "random",
   "logs": true,
   "mode": 2
 }
