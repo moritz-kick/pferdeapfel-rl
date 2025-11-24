@@ -31,8 +31,8 @@ pferdeapfel-rl/
 │   │   ├── random.py
 │   │   └── rl/
 │   │       ├── __init__.py
-│   │       ├── dqn_rl.py     # DQN RL player
-│   │       └── ppo_rl.py     # PPO RL player
+│   │       ├── greedy.py     # Mobility-based greedy player for debugging
+│   │       └── ppo_self_play.py  # PPO RL player (single policy self-play)
 │   ├── gui/
 │   │   ├── __init__.py
 │   │   ├── main.py         # GUI entry point (using PySide6)
@@ -40,13 +40,12 @@ pferdeapfel-rl/
 │   │   └── dashboard.py    # Visualization for benchmarks/evals
 │   ├── env/
 │   │   ├── __init__.py
-│   │   └── pferdeapfel_env.py  # Gym-compatible env for SB3
+│   │   └── knight_self_play_env.py  # Gymnasium env with single-policy perspective swap
 │   ├── training/
 │   │   ├── __init__.py
 │   │   ├── config.yaml      # Configuration for training
-│   │   ├── dqn_train.py     # DQN training script
-│   │   ├── ppo_train.py     # PPO training script
-│   │   └── optuna_tune.py   # Optuna tuning script
+│   │   ├── ppo_self_play_train.py  # PPO training entry point
+│   │   └── optuna_tune.py          # Optional hyper-parameter tuning
 │   └── evaluation/
 │       ├── __init__.py
 │       ├── eval_script.py  # Full pairwise evaluation, skip existing
@@ -97,10 +96,11 @@ repos:
 
 ```
 
-#### Milestone 1: Simple Game Implementation
-1. Implement core game in src/game/: board.py for state (numpy array for board), rules.py for moves/validation/win checks with the 3 modes.
-2. Create player classes in src/players/: base.py with abstract methods (e.g., get_move(state)), human.py (input-based), random.py (choose random legal move).
-3. Build GUI in src/gui/: Use PySide6 for 8x8 grid display.
+#### Milestone 1: Core Game Baseline + Greedy Debug Player
+1. Implement core game in `src/game/` (`board.py`, `rules.py`) with validated knight moves and win conditions for mode 2 first.
+2. Build player scaffolding in `src/players/`:
+   - `base.py` abstract API, `human.py`, `random.py`, and new `greedy.py` that maximizes next-move mobility (used later for smoke tests).
+3. Keep GUI lightweight for now: minimal PySide6 prototype to visualize moves and allow human vs random/greedy for debugging (full dashboard delayed).
    - Show current state: Board with horses, blocked squares, apple counts, turn indicator.
    - Display legal moves: Highlight possible knight jumps.
    - Player selection: Dropdown for White/Black (human, random, or later RL).
@@ -109,33 +109,46 @@ repos:
    - Redo last move: Undo button to revert state (keep a move history stack).
    - Display Winner: Show winner when game ends.
    - Restart button for new game.
-4. Add simulation script: scripts/simulate_random.py to run random vs random, output to console or log.
-5. Basic tests in tests/: Ensure legal moves, win conditions work.
-6. Run/test: Play human vs random, verify features.
+4. `scripts/simulate_random.py` now supports `{random, greedy}` combos for regression runs and writes JSON summaries.
+5. Basic tests in `tests/`: legal moves, win conditions, greedy-move determinism.
+6. Smoke-test CLI sims (human optional) to ensure deterministic seeds/logging.
 
-#### Milestone 2: RL Environment and Basic Training
-1. We start with mode 2, after that we will implement mode 1 and 3.
-2. Create Gym env in src/env/pferdeapfel_env.py: Inherit from gymnasium.Env.
-3. First RL player in src/players/rl/ppo_rl.py: Wrap SB3 model, load/save models, use PPO self play to train the model and use action_masks to mask out illegal moves.
-4. I/O check script: tests/test_rl_io.py – Input sample states, log actions/rewards to data/logs/rl_player/.
-5. Training in src/training/:
-   - config.yaml: Params like learning_rate, n_steps, batch_size.
-   - ppo_train.py: Load config, create env, train PPO, save model to data/models/, use TensorBoard for logging (e.g., callbacks).
-6. Integrate RL to GUI: Scan src/players/rl/ for subclasses, add to dropdown; load defaults from gui/config.json (e.g., {"white": "human", "black": "random", "logs": true}).
-7. Evaluation: In src/evaluation/eval_script.py – Run N games RL vs random, compute win rate, save to CSV.
-8. Dashboard: src/gui/dashboard.py – Use matplotlib to plot win rates, viewable in GUI or separate.
-9. (Added) Tests for env (valid spaces, steps).
-10. Update README.md
+#### Milestone 2: Single-Policy Self-Play Environment
+1. Convert the mode-2 rules into `src/env/knight_self_play_env.py` exactly as described in the recipe:
+   - Observation: `(3, board_size, board_size)` tensor with `my`, `opp`, `visited` channels.
+   - Action space: `Discrete(8)` mapping to knight deltas.
+   - Perspective swap: `reset`/`step` always return state from current player POV by swapping channels.
+2. Implement action masking and illegal-move handling:
+   - `info["legal_moves_mask"]` boolean array of shape `(8,)`.
+   - Illegal choice ⇒ terminate with `reward=-1` and `info["illegal"]=True`.
+3. Reward shaping hooks:
+   - Terminal rewards ±1 for capture/no-moves.
+   - Optional small step reward (e.g., `+0.001`) and mobility delta shaping `0.01 * (mobility_self - mobility_opp)` at non-terminal steps.
+   - Parameterize shaping weights inside env config for quick sweeps.
+4. Add vector-friendly factory in `src/training/env_factory.py` returning Gymnasium env wrapped for Stable-Baselines3 (e.g., `DummyVecEnv` with mask-aware wrapper).
+5. Tests:
+   - `tests/test_knight_env.py` verifying observation symmetry, action mask correctness, reward signs on terminal states, and deterministic resets.
 
-#### Milestone 3: Advanced Training and Evaluation
-1. Optuna integration: optuna_tune.py – Define objective func to train/tune hypers, run studies.
-2. Advanced evaluation, update existing: src/evaluation/eval_script.py
-   - Scan src/players/ (exclude human) and data/models/ for available players/models.
-   - Load existing results.csv with columns: player1, player2, wins1, wins2, games_played.
-   - For each pair (including self-play if useful), if not fully played <1000 games, run simulations, update file.
-   - Skip human; support parallel runs.
-   - Options: N games per pair, randomroles (White/Black).
-3. Integrate eval results to dashboard for visualization (heatmaps of win rates).
-4. Add best move visualization to GUI
-5. Update README.md
-6. After we fully implemented everything for mode 2, implement everything from Milestone 2 & 3 for mode 1 and 3.
+#### Milestone 3: PPO Self-Play Training Loop
+1. `src/players/rl/ppo_self_play.py`: thin wrapper that loads/saves Stable-Baselines3 PPO and exposes `select_action(observation, legal_mask)` for GUI/eval.
+2. `src/training/ppo_self_play_train.py`:
+   - Loads `config.yaml` (board size, shaping weights, PPO hyperparameters).
+   - Instantiates `DummyVecEnv` via `env_factory`.
+   - Configures PPO with `CnnPolicy`, `gamma=0.99`, `n_steps≈2048`, `batch_size=64`, `learning_rate=3e-4` (tweak via config).
+   - Integrates legal-action masking by wrapping policy logits (either custom SB3 policy or callback).
+   - Adds TensorBoard logging and periodic model checkpoints in `data/models/`.
+3. Evaluation utilities:
+   - `src/evaluation/self_play_eval.py`: run PPO vs random/greedy, compute win rates, push CSV metrics plus TensorBoard scalars.
+   - CLI to load a saved PPO zip and pit against greedy to verify learning progress (baseline metric: PPO should exceed greedy within N timesteps).
+4. Documentation updates:
+   - `README.md` quickstart for training/eval.
+   - `documentation/rules_en.md` cross-link to env assumptions (self-play perspective, illegal move penalties).
+
+#### Milestone 4: Advanced Training, GUI Integration, and Multi-Mode Rollout
+1. Optuna integration (optional but ready): `optuna_tune.py` wraps the PPO training loop with search spaces for shaping weights, learning rate, etc.
+2. Enhance GUI to load PPO checkpoints:
+   - Dropdown includes `ppo_self_play` wrapper; requires env-compatible observation builder for GUI matches.
+   - Add toggle to show legal move mask and greedy recommendation for debugging.
+3. Expand evaluation suite (`src/evaluation/eval_script.py`) to auto-discover available bots (random, greedy, PPO checkpoints) and log round-robin stats.
+4. Dashboard (`src/gui/dashboard.py`) visualizes training curves, win matrices, illegal-move rates.
+5. Once mode 2 pipeline (env + PPO self-play + greedy baseline) is stable, port the same env abstraction to modes 1 and 3 (shared env base class with mode-specific rules) and repeat training/eval steps.

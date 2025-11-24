@@ -58,6 +58,8 @@ To ensure logical consistency regarding the "Draw" condition, the turn structure
   - White is immobilized (cannot move).
   - *Condition:* This must happen **before** the supply of 28 brown apples is exhausted.
 - **Scoring for Black:** If Black wins, they get **1 point** for every unused brown apple remaining in the supply.
+- **White Bonus:** If Black becomes immobilized **before** any golden apples are placed (i.e., still in the brown phase),
+  White wins immediately and is awarded **12 points**—the value of the untouched golden reserve—even though Phase 2 never begins.
 
 **The Draw Condition:**
 - The game ends in a **Draw** if Black captures White on the exact turn where the **last brown apple** was used for the **Mandatory Placement**.

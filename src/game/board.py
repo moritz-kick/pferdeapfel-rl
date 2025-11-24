@@ -38,8 +38,9 @@ class Board:
         # Track if golden phase has started
         self.golden_phase_started = False
 
-        # Track if golden phase has started
-        self.golden_phase_started = False
+        # Track match-level win state for White (classic mode)
+        self.white_match_win_declared = False
+        self.white_won_in_brown_phase = False
 
         # Track if draw condition met (Mode 3)
         self.draw_condition_met = False
@@ -56,6 +57,8 @@ class Board:
         new_board.brown_apples_remaining = self.brown_apples_remaining
         new_board.golden_apples_remaining = self.golden_apples_remaining
         new_board.golden_phase_started = self.golden_phase_started
+        new_board.white_match_win_declared = self.white_match_win_declared
+        new_board.white_won_in_brown_phase = self.white_won_in_brown_phase
         if hasattr(self, "draw_condition_met"):
             new_board.draw_condition_met = getattr(self, "draw_condition_met")
         new_board.move_history = copy.deepcopy(self.move_history)

@@ -12,8 +12,7 @@ from typing import Callable, Dict, Iterable, List, Sequence
 
 from src.game.game import Game
 from src.players.base import Player
-from src.players.mcts import MCTSPlayer
-from src.players.minimax import AlphaBetaPlayer
+from src.players.greedy import GreedyPlayer
 from src.players.random import RandomPlayer
 
 logger = logging.getLogger(__name__)
@@ -167,9 +166,8 @@ def _load_existing_pairs(output: Path) -> set[tuple[str, str]]:
 def _build_player_specs(model_paths: Sequence[Path]) -> list[PlayerSpec]:
     """Collect all playable agents for evaluation."""
     specs: list[PlayerSpec] = [
-        PlayerSpec(name="RandomPlayer", builder=lambda _side: RandomPlayer("RandomPlayer")),
-        PlayerSpec(name="MCTSPlayer", builder=lambda side: MCTSPlayer(side)),
-        PlayerSpec(name="AlphaBetaPlayer", builder=lambda side: AlphaBetaPlayer(side)),
+        PlayerSpec(name="RandomPlayer", builder=lambda side: RandomPlayer(side.capitalize())),
+        PlayerSpec(name="GreedyPlayer", builder=lambda side: GreedyPlayer(side)),
     ]
 
     for path in model_paths:

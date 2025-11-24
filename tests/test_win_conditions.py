@@ -82,6 +82,38 @@ class TestWinConditions(unittest.TestCase):
         # Next move should use golden apple
         # This is tested indirectly through make_move logic
 
+    def test_white_clinches_when_golden_required(self) -> None:
+        """White should be flagged as winner once a golden apple is needed."""
+        board = Board(mode=3)
+        board.brown_apples_remaining = 0
+
+        success = Rules.make_move(board, "white", (1, 2))
+        self.assertTrue(success)
+        self.assertTrue(board.golden_phase_started)
+        self.assertTrue(Rules.has_white_clinched(board))
+
+    def test_white_scores_bonus_when_black_stuck_pre_golden(self) -> None:
+        """White gets bonus points if Black is immobilized before golden apples appear."""
+        board = Board(mode=3)
+        board.grid[:, :] = Board.EMPTY
+        board.white_pos = (0, 0)
+        board.black_pos = (4, 4)
+        board.grid[0, 0] = Board.WHITE_HORSE
+        board.grid[4, 4] = Board.BLACK_HORSE
+
+        for dr, dc in Rules.KNIGHT_MOVES:
+            r, c = 4 + dr, 4 + dc
+            if board.is_valid_square(r, c):
+                board.grid[r, c] = Board.BROWN_APPLE
+
+        winner = Rules.check_win_condition(board, last_mover="white")
+        self.assertEqual(winner, "white")
+        self.assertTrue(board.white_won_in_brown_phase)
+        self.assertTrue(Rules.has_white_clinched(board))
+
+        score = Rules.calculate_score(board, winner)
+        self.assertEqual(score, 12)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -87,6 +87,8 @@ class Rules:
             "brown_apples_remaining": board.brown_apples_remaining,
             "golden_apples_remaining": board.golden_apples_remaining,
             "golden_phase_started": board.golden_phase_started,
+            "white_match_win_declared": getattr(board, "white_match_win_declared", False),
+            "white_won_in_brown_phase": getattr(board, "white_won_in_brown_phase", False),
         }
         if hasattr(board, "draw_condition_met"):
             state_snapshot["draw_condition_met"] = board.draw_condition_met
@@ -165,6 +167,7 @@ class Rules:
                 mandatory_apple = Board.GOLDEN_APPLE
                 board.golden_apples_remaining -= 1
                 board.golden_phase_started = True
+                board.white_match_win_declared = True
 
             board.grid[old_row, old_col] = mandatory_apple
 
@@ -209,6 +212,7 @@ class Rules:
                     optional_apple = Board.GOLDEN_APPLE
                     board.golden_apples_remaining -= 1
                     board.golden_phase_started = True
+                    board.white_match_win_declared = True
 
                 board.grid[extra_row, extra_col] = optional_apple
 
@@ -225,6 +229,8 @@ class Rules:
         board.brown_apples_remaining = snapshot["brown_apples_remaining"]
         board.golden_apples_remaining = snapshot["golden_apples_remaining"]
         board.golden_phase_started = snapshot["golden_phase_started"]
+        board.white_match_win_declared = snapshot.get("white_match_win_declared", False)
+        board.white_won_in_brown_phase = snapshot.get("white_won_in_brown_phase", False)
         if "draw_condition_met" in snapshot:
             board.draw_condition_met = snapshot["draw_condition_met"]
         elif hasattr(board, "draw_condition_met"):
@@ -242,6 +248,11 @@ class Rules:
     def can_white_move(board: Board) -> bool:
         """Check if White has any legal moves (legacy helper)."""
         return Rules.can_player_move(board, "white")
+
+    @staticmethod
+    def has_white_clinched(board: Board) -> bool:
+        """Return True once White has secured the classic-mode match."""
+        return bool(getattr(board, "white_match_win_declared", False))
 
     @staticmethod
     def check_win_condition(board: Board, last_mover: Optional[str] = None) -> Optional[str]:
@@ -272,6 +283,9 @@ class Rules:
             return None
 
         # --- MODE 3: Classic ---
+        if board.golden_phase_started:
+            board.white_match_win_declared = True
+
         # 1. Draw Condition
         if getattr(board, "draw_condition_met", False):
             return "draw"
@@ -296,6 +310,9 @@ class Rules:
                 return "black"
 
         if black_stuck:
+            if not board.golden_phase_started:
+                board.white_won_in_brown_phase = True
+            board.white_match_win_declared = True
             return "white"
 
         # 4. Golden Apples Exhausted
@@ -325,22 +342,15 @@ class Rules:
             return board.brown_apples_remaining
 
         if winner == "white":
-            # Check for special 24-point conditions
+            if getattr(board, "white_won_in_brown_phase", False):
+                return 12
+            # Score is based on golden apples that have been placed during the game.
+            total_golden = 12
+            golden_used = total_golden - board.golden_apples_remaining
 
-            # 1. Black immobilized
-            if not Rules.can_player_move(board, "black"):
-                return board.golden_apples_remaining
-
-            # 2. All 12 Golden Apples used
-            if board.golden_apples_remaining == 0:
+            if board.golden_apples_remaining == 0 and Rules.can_player_move(board, "white"):
                 return 24
 
-            # Otherwise: 1 point for every Golden Apple on board
-            count = 0
-            for r in range(Board.BOARD_SIZE):
-                for c in range(Board.BOARD_SIZE):
-                    if board.grid[r, c] == Board.GOLDEN_APPLE:
-                        count += 1
-            return count
+            return max(golden_used, 0)
 
         return 0

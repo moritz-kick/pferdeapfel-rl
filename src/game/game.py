@@ -110,6 +110,8 @@ class Game:
         self.board.brown_apples_remaining = state["brown_apples_remaining"]
         self.board.golden_apples_remaining = state["golden_apples_remaining"]
         self.board.golden_phase_started = state["golden_phase_started"]
+        self.board.white_match_win_declared = state.get("white_match_win_declared", False)
+        self.board.white_won_in_brown_phase = state.get("white_won_in_brown_phase", False)
 
         # Remove last log entry if logging
         if self.logging and self.log_data:

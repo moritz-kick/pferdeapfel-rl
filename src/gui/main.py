@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from src.game.game import Game
 from src.game.rules import Rules
 from src.players.base import Player
+from src.players.greedy import GreedyPlayer
 from src.players.human import HumanPlayer
 from src.players.random import RandomPlayer
 from src.players.rl import discover_rl_players
@@ -327,6 +328,7 @@ class GameWindow(QWidget):
         factories: dict[str, Callable[[str], Player]] = {
             "human": lambda color: HumanPlayer(color.capitalize()),
             "random": lambda color: RandomPlayer(color.capitalize()),
+            "greedy": lambda color: GreedyPlayer(color),
             "mcts": lambda color: MCTSPlayer(color),
             "ppo": lambda color: PPOPlayer(color),
         }
