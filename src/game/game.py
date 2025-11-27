@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import random
+
 from pathlib import Path
 from typing import Any, Optional
 
@@ -26,7 +26,7 @@ class Game:
         self.black_player = black_player
         self.logging = logging
         self.log_data: list[dict[str, Any]] = []
-        self.current_player: str = random.choice(["white", "black"])
+        self.current_player: str = "white"
         self.starting_player = self.current_player
         self.winner: Optional[str] = None
         self.game_over = False

@@ -74,7 +74,51 @@ class PPOPlayer(Player):
             logger.warning("PPO model missing, falling back to random move")
             return self._fallback_move(board, legal_moves)
 
-        obs = board.grid.copy()
+        # Construct observation in (7, 8, 8) format
+        # Channel 0: My Position
+        # Channel 1: Opponent Position
+        # Channel 2: Blocked Squares
+        # Channel 3: Mode ID
+        # Channel 4: Current Role
+        # Channel 5: Brown Apples Remaining
+        # Channel 6: Golden Apples Remaining
+        import numpy as np
+
+        obs = np.zeros((7, 8, 8), dtype=np.float32)
+
+        my_pos = board.get_horse_position(self.side)
+        opp_side = "black" if self.side == "white" else "white"
+        opp_pos = board.get_horse_position(opp_side)
+
+        obs[0, my_pos[0], my_pos[1]] = 1.0
+        obs[1, opp_pos[0], opp_pos[1]] = 1.0
+
+        for r in range(8):
+            for c in range(8):
+                if not board.is_empty(r, c):
+                    obs[2, r, c] = 1.0
+
+        # Channel 3: Mode ID (Normalized)
+        mode_val = 0.0
+        if board.mode == 2:
+            mode_val = 0.5
+        elif board.mode == 3:
+            mode_val = 1.0
+        obs[3, :, :] = mode_val
+
+        # Channel 4: Current Role
+        role_val = 1.0 if self.side == "white" else 0.0
+        obs[4, :, :] = role_val
+
+        # Channel 5: Brown Apples Remaining (Normalized)
+        brown_val = board.brown_apples_remaining / 28.0
+        obs[5, :, :] = brown_val
+
+        # Channel 6: Golden Apples Remaining (Normalized)
+        golden_val = board.golden_apples_remaining / 12.0
+        obs[6, :, :] = golden_val
+
+        # Predict
         action, _states = self.model.predict(obs, deterministic=self.deterministic)
         move_idx = int(action[0])
         apple_idx = int(action[1]) if len(action) > 1 else 64
@@ -83,7 +127,6 @@ class PPOPlayer(Player):
         extra_apple = self._decode_apple(board, apple_idx)
 
         if move_to not in legal_moves:
-            logger.warning("PPO predicted illegal move %s, choosing fallback", move_to)
             return self._fallback_move(board, legal_moves)
 
         return move_to, extra_apple
@@ -100,8 +143,6 @@ class PPOPlayer(Player):
             return None
 
         row, col = divmod(apple_idx, Board.BOARD_SIZE)
-        if not board.is_empty(row, col):
-            return None
         return (row, col)
 
     def _fallback_move(
