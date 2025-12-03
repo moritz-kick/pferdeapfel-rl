@@ -1,5 +1,20 @@
 """
-Self-play Gymnasium environment for Pferdeäpfel.
+Self-play Gymnasium environment for Pferdeäpfel with Action Masking.
+
+This environment is designed for self-play where a single policy
+controls the agent, while the opponent is handled separately.
+
+The key insight: In the original design, the same policy controlled both players
+and the reward was given to whoever won. This caused the policy to learn to
+"throw the game" quickly because winning fast = maximum discounted reward.
+
+This version fixes the issue by:
+1. Assigning the agent to ONE color per episode (randomly chosen)
+2. Having a separate opponent make moves (random by default, or a provided policy)
+3. Giving rewards only from the agent's perspective
+4. Using ACTION MASKING to prevent illegal moves entirely
+
+This is the standard approach for self-play in board games (AlphaGo, etc).
 """
 
 from __future__ import annotations
@@ -21,13 +36,18 @@ logger = logging.getLogger(__name__)
 
 class KnightSelfPlayEnv(gym.Env):
     """
-    Gymnasium environment for Pferdeäpfel self-play.
+    Gymnasium environment for Pferdeäpfel with proper self-play handling.
+
+    Key Design: The agent is assigned to ONE color per episode, and the opponent
+    is controlled by a separate policy (default: random). This prevents the 
+    degenerate case where a single policy controlling both sides learns to 
+    "throw the game" for quick rewards.
 
     Observation Space:
         Box(low=0, high=1, shape=(7, 8, 8), dtype=np.float32)
         - Channel 0: Current Player Position (1.0 at pos, 0.0 elsewhere)
         - Channel 1: Opponent Player Position (1.0 at pos, 0.0 elsewhere)
-        - Channel 2: Blocked Squares (1.0 if blocked/apple/visited, 0.0 if empty)
+        - Channel 2: Blocked Squares (1.0 if blocked/apple/visited, 0.0 elsewhere)
         - Channel 3: Mode ID (Normalized: 1->0.0, 2->0.5, 3->1.0)
         - Channel 4: Current Role (1.0 if White, 0.0 if Black)
         - Channel 5: Brown Apples Remaining (Normalized: count / 28.0)
@@ -41,15 +61,25 @@ class KnightSelfPlayEnv(gym.Env):
 
     metadata = {"render_modes": ["human", "ansi"], "render_fps": 4}
 
-    def __init__(self, mode: Union[int, str] = "random") -> None:
+    def __init__(
+        self,
+        mode: Union[int, str] = "random",
+        agent_color: str = "random",
+        opponent_policy: Optional[Any] = None,
+    ) -> None:
         """
         Initialize the environment.
 
         Args:
             mode: Game mode (1, 2, 3) or "random"
+            agent_color: Which color the RL agent plays ("white", "black", or "random")
+            opponent_policy: Optional policy for opponent moves. If None, uses random.
+                           Can be a stable-baselines3 model or any callable(obs) -> action
         """
         super().__init__()
         self.mode_config = mode
+        self.agent_color_config = agent_color
+        self.opponent_policy = opponent_policy
 
         # Define action and observation space
         self.action_space = spaces.MultiDiscrete([8, 65])
@@ -57,13 +87,19 @@ class KnightSelfPlayEnv(gym.Env):
         self.observation_space = spaces.Box(low=0, high=1, shape=(7, 8, 8), dtype=np.float32)
 
         # Initialize game components
-        # We use placeholder players since the env controls the game flow
         self.white_player = RandomPlayer("White")
         self.black_player = RandomPlayer("Black")
         self.game: Optional[Game] = None
 
-        # Track who is the "agent" currently acting (switches every step)
-        self.current_agent_color = "white"
+        # The color the RL agent is playing this episode (fixed per episode)
+        self.agent_color: str = "white"
+        
+        # Move counter for shaping rewards
+        self.move_count = 0
+
+    def set_opponent_policy(self, policy: Any) -> None:
+        """Update the opponent policy (useful for curriculum learning)."""
+        self.opponent_policy = policy
 
     def reset(
         self,
@@ -80,17 +116,166 @@ class KnightSelfPlayEnv(gym.Env):
         else:
             mode = int(self.mode_config)
 
+        # Determine which color the agent plays this episode
+        if self.agent_color_config == "random":
+            self.agent_color = "white" if self.np_random.random() < 0.5 else "black"
+        else:
+            self.agent_color = self.agent_color_config
+
         # Create new game
         self.game = Game(self.white_player, self.black_player, mode=mode)
+        self.move_count = 0
 
-        # Randomly decide who starts (Game does this, but we need to sync)
-        self.current_agent_color = self.game.current_player
+        # If opponent goes first (agent is black and white starts), let opponent move
+        if self.game.current_player != self.agent_color:
+            self._opponent_move()
 
         return self._get_observation(), self._get_info()
+
+    def _opponent_move(self) -> bool:
+        """
+        Let the opponent make a move.
+        
+        Returns:
+            True if game continues, False if game ended.
+        """
+        if self.game is None or self.game.game_over:
+            return False
+
+        opp_color = self.game.current_player
+        legal_moves = Rules.get_legal_knight_moves(self.game.board, opp_color)
+
+        if not legal_moves:
+            # Opponent is stuck - game should end
+            self.game.get_legal_moves()  # This triggers game over check
+            return False
+
+        if self.opponent_policy is not None:
+            # Use provided opponent policy
+            opp_obs = self._get_observation_for_player(opp_color)
+            action = None
+            if hasattr(self.opponent_policy, 'predict'):
+                # If opponent is a MaskablePPO model, provide action masks for its color
+                try:
+                    from sb3_contrib import MaskablePPO  # type: ignore
+                    from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy  # type: ignore
+                    is_maskable = isinstance(self.opponent_policy, MaskablePPO) and isinstance(getattr(self.opponent_policy, 'policy', None), MaskableActorCriticPolicy)
+                except Exception:
+                    is_maskable = False
+                if is_maskable:
+                    opp_masks = self._get_action_masks_for_color(opp_color)
+                    action, _ = self.opponent_policy.predict(opp_obs, deterministic=False, action_masks=opp_masks)
+                else:
+                    action, _ = self.opponent_policy.predict(opp_obs, deterministic=False)
+            else:
+                # Callable
+                action = self.opponent_policy(opp_obs)
+            move_idx, apple_idx = action
+            
+            # Decode move
+            current_pos = self.game.board.get_horse_position(opp_color)
+            dr, dc = Rules.KNIGHT_MOVES[move_idx]
+            move_to = (current_pos[0] + dr, current_pos[1] + dc)
+
+            extra_apple = None
+            if apple_idx < 64:
+                extra_apple = (apple_idx // 8, apple_idx % 8)
+
+            # If move is illegal, fall back to random legal move
+            if move_to not in legal_moves:
+                move_to = legal_moves[self.np_random.integers(0, len(legal_moves))]
+                extra_apple = self._get_random_valid_apple()
+        else:
+            # Random opponent - just pick from legal moves
+            move_to = legal_moves[self.np_random.integers(0, len(legal_moves))]
+            extra_apple = self._get_random_valid_apple()
+
+        success = self.game.make_move(move_to, extra_apple)
+        
+        # If move failed (bad apple), try again without apple
+        if not success:
+            self.game.make_move(move_to, None)
+
+        return not self.game.game_over
+
+    def _get_action_masks_for_color(self, color: str) -> np.ndarray:
+        """Compute flattened action mask (length 73) for a specific player color.
+
+        This mirrors ``action_masks`` but allows specifying the actor (agent vs opponent).
+        """
+        if self.game is None:
+            return np.ones(73, dtype=bool)
+
+        board = self.game.board
+        current_pos = board.get_horse_position(color)
+
+        move_mask = np.zeros(8, dtype=bool)
+        legal_moves = Rules.get_legal_knight_moves(board, color)
+        legal_move_set = set(legal_moves)
+        for idx, (dr, dc) in enumerate(Rules.KNIGHT_MOVES):
+            target = (current_pos[0] + dr, current_pos[1] + dc)
+            if target in legal_move_set:
+                move_mask[idx] = True
+
+        apple_mask = np.zeros(65, dtype=bool)
+        if board.mode == 1:
+            for r in range(8):
+                for c in range(8):
+                    if board.is_empty(r, c):
+                        apple_mask[r * 8 + c] = True
+        elif board.mode == 2:
+            apple_mask[64] = True
+        elif board.mode == 3:
+            white_legal_moves = Rules.get_legal_knight_moves(board, "white")
+            white_legal_set = set(white_legal_moves)
+            for r in range(8):
+                for c in range(8):
+                    if board.is_empty(r, c):
+                        if (r, c) in white_legal_set and len(white_legal_moves) == 1:
+                            continue
+                        apple_mask[r * 8 + c] = True
+            apple_mask[64] = True
+
+        if not move_mask.any():
+            move_mask[:] = True
+        if not apple_mask.any():
+            apple_mask[64] = True
+
+        return np.concatenate([move_mask, apple_mask])
+
+    def _get_random_valid_apple(self) -> Optional[Tuple[int, int]]:
+        """Get a random valid apple placement position."""
+        if self.game is None:
+            return None
+        
+        # For mode 1, apple is required
+        # For mode 2, apple is automatic (trail)
+        # For mode 3, apple is optional
+        if self.game.board.mode == 2:
+            return None  # Mode 2 handles apple automatically
+        
+        empty_squares = []
+        for r in range(8):
+            for c in range(8):
+                if self.game.board.is_empty(r, c):
+                    empty_squares.append((r, c))
+        
+        if empty_squares:
+            # For mode 1, always place (required)
+            # For mode 3, 50% chance to place optional apple
+            if self.game.board.mode == 1:
+                return empty_squares[self.np_random.integers(0, len(empty_squares))]
+            elif self.game.board.mode == 3:
+                if self.np_random.random() < 0.5:
+                    return empty_squares[self.np_random.integers(0, len(empty_squares))]
+        return None
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """
         Execute one step in the environment.
+
+        The agent makes a move, then the opponent responds (if game continues).
+        Rewards are from the agent's perspective only.
 
         Args:
             action: [move_index, apple_index]
@@ -101,8 +286,8 @@ class KnightSelfPlayEnv(gym.Env):
         # 1. Decode Action
         move_idx, apple_idx = action
 
-        # Get current position
-        current_pos = self.game.board.get_horse_position(self.current_agent_color)
+        # Get current position (agent's position)
+        current_pos = self.game.board.get_horse_position(self.agent_color)
 
         # Calculate target move
         dr, dc = Rules.KNIGHT_MOVES[move_idx]
@@ -114,55 +299,68 @@ class KnightSelfPlayEnv(gym.Env):
             extra_apple = (apple_idx // 8, apple_idx % 8)
 
         # 2. Validate and Execute Move
-
-        # Check legality first to give penalty for invalid moves
-        legal_moves = Rules.get_legal_knight_moves(self.game.board, self.current_agent_color)
+        legal_moves = Rules.get_legal_knight_moves(self.game.board, self.agent_color)
 
         if move_to not in legal_moves:
-            # Invalid move penalty
-            # We punish illegal moves heavily and end the episode to teach rules
+            # Invalid move - heavy penalty and end episode
             return self._get_observation(), -1.0, True, False, {"error": "Invalid move"}
 
         # Try to make the move
-        # game.make_move handles turn switching and win checking
         success = self.game.make_move(move_to, extra_apple)
 
         if not success:
             # Invalid apple placement or other rule violation
             return self._get_observation(), -1.0, True, False, {"error": "Invalid action (apple/rules)"}
 
-        # 3. Check Game End
-        if self.game.game_over:
-            # If the game ended, check if the current agent won
-            # self.game.winner is set by Game
-            if self.game.winner == self.current_agent_color:
-                reward = 1.0
-            elif self.game.winner == "draw":
-                reward = 0.0
-            else:
-                # Opponent won (or we lost by getting stuck, though legal_moves check handles that mostly)
-                reward = -1.0
+        self.move_count += 1
 
+        # 3. Check if game ended after agent's move
+        if self.game.game_over:
+            reward = self._calculate_reward()
             return self._get_observation(), reward, True, False, {"winner": self.game.winner}
 
-        # 4. Switch Perspective
-        self.current_agent_color = self.game.current_player
+        # 4. Opponent's turn
+        game_continues = self._opponent_move()
 
-        # Return observation for the NEW current player
-        return self._get_observation(), 0.0, False, False, {}
+        # 5. Check if game ended after opponent's move
+        if self.game.game_over or not game_continues:
+            reward = self._calculate_reward()
+            return self._get_observation(), reward, True, False, {"winner": self.game.winner}
+
+        # 6. Game continues - small survival reward to encourage longer games
+        survival_reward = 0.01
+
+        return self._get_observation(), survival_reward, False, False, {}
+
+    def _calculate_reward(self) -> float:
+        """Calculate final reward based on game outcome."""
+        if self.game is None:
+            return 0.0
+
+        if self.game.winner == self.agent_color:
+            # Win! Base reward + bonus for longer games (more learning)
+            game_length_bonus = min(self.move_count * 0.01, 0.5)
+            return 1.0 + game_length_bonus
+        elif self.game.winner == "draw":
+            return 0.0
+        else:
+            # Loss - but less penalty for longer games (agent tried harder)
+            game_length_reduction = min(self.move_count * 0.01, 0.3)
+            return -1.0 + game_length_reduction
 
     def _get_observation(self) -> np.ndarray:
-        """
-        Get the current board state as observation from current player's perspective.
-        Shape: (7, 8, 8)
-        """
+        """Get observation from the agent's perspective."""
+        return self._get_observation_for_player(self.agent_color)
+
+    def _get_observation_for_player(self, player: str) -> np.ndarray:
+        """Get observation from a specific player's perspective."""
         if self.game is None:
             return np.zeros((7, 8, 8), dtype=np.float32)
 
         obs = np.zeros((7, 8, 8), dtype=np.float32)
 
-        my_pos = self.game.board.get_horse_position(self.current_agent_color)
-        opp_color = "black" if self.current_agent_color == "white" else "white"
+        my_pos = self.game.board.get_horse_position(player)
+        opp_color = "black" if player == "white" else "white"
         opp_pos = self.game.board.get_horse_position(opp_color)
 
         # Channel 0: My Position
@@ -178,7 +376,6 @@ class KnightSelfPlayEnv(gym.Env):
                     obs[2, r, c] = 1.0
 
         # Channel 3: Mode ID (Normalized)
-        # 1 -> 0.0, 2 -> 0.5, 3 -> 1.0
         mode_val = 0.0
         if self.game.board.mode == 2:
             mode_val = 0.5
@@ -187,17 +384,14 @@ class KnightSelfPlayEnv(gym.Env):
         obs[3, :, :] = mode_val
 
         # Channel 4: Current Role
-        # White -> 1.0, Black -> 0.0
-        role_val = 1.0 if self.current_agent_color == "white" else 0.0
+        role_val = 1.0 if player == "white" else 0.0
         obs[4, :, :] = role_val
 
         # Channel 5: Brown Apples Remaining (Normalized)
-        # Max 28
         brown_val = self.game.board.brown_apples_remaining / 28.0
         obs[5, :, :] = brown_val
 
         # Channel 6: Golden Apples Remaining (Normalized)
-        # Max 12
         golden_val = self.game.board.golden_apples_remaining / 12.0
         obs[6, :, :] = golden_val
 
@@ -208,9 +402,11 @@ class KnightSelfPlayEnv(gym.Env):
         if self.game is None:
             return {}
         return {
-            "turn": self.current_agent_color,
+            "agent_color": self.agent_color,
+            "turn": self.game.current_player,
             "white_pos": self.game.board.white_pos,
             "black_pos": self.game.board.black_pos,
+            "move_count": self.move_count,
         }
 
     def render(self) -> Optional[List[str]]:
@@ -221,6 +417,7 @@ class KnightSelfPlayEnv(gym.Env):
         # Simple ANSI render
         grid = self.game.board.grid
         output = []
+        output.append(f"Agent: {self.agent_color} | Mode: {self.game.board.mode}")
         output.append("  0 1 2 3 4 5 6 7")
         for r in range(8):
             row_str = f"{r} "
@@ -243,3 +440,79 @@ class KnightSelfPlayEnv(gym.Env):
                 print(line)
 
         return output
+
+    def action_masks(self) -> np.ndarray:
+        """Return flattened boolean action mask for MaskablePPO.
+
+        MaskablePPO (sb3-contrib) expects a single 1D boolean array whose length
+        equals the sum of the discrete action dimensions when using a
+        ``MultiDiscrete`` action space. Our action space is ``MultiDiscrete([8, 65])``
+        (8 knight move indices, 64 board squares + 1 "no apple" option).
+
+        The returned array therefore has length 73 and is ordered as:
+        [move_0 .. move_7, apple_0 .. apple_63, apple_no_choice]
+
+        True = action is valid, False = action is invalid.
+        """
+        if self.game is None:
+            # If no game, allow everything (will be reset anyway)
+            return np.ones(73, dtype=bool)
+        
+        board = self.game.board
+        current_pos = board.get_horse_position(self.agent_color)
+        
+        # --- Mask for knight moves (8 possible moves) ---
+        move_mask = np.zeros(8, dtype=bool)
+        legal_moves = Rules.get_legal_knight_moves(board, self.agent_color)
+        legal_move_set = set(legal_moves)
+        
+        for idx, (dr, dc) in enumerate(Rules.KNIGHT_MOVES):
+            target = (current_pos[0] + dr, current_pos[1] + dc)
+            if target in legal_move_set:
+                move_mask[idx] = True
+        
+        # --- Mask for apple placement (64 squares + 1 for "no apple") ---
+        apple_mask = np.zeros(65, dtype=bool)
+        
+        if board.mode == 1:
+            # Mode 1: Apple placement is REQUIRED before moving
+            # Valid placements are empty squares
+            for r in range(8):
+                for c in range(8):
+                    if board.is_empty(r, c):
+                        apple_mask[r * 8 + c] = True
+            # "No apple" (index 64) is NOT valid in mode 1
+            
+        elif board.mode == 2:
+            # Mode 2: Apple is automatic (trail), no choice needed
+            # Only "no apple" action is valid
+            apple_mask[64] = True
+            
+        elif board.mode == 3:
+            # Mode 3: Apple placement is OPTIONAL after moving
+            # Restriction: Cannot block White's last remaining escape route
+            white_legal_moves = Rules.get_legal_knight_moves(board, "white")
+            white_legal_set = set(white_legal_moves)
+            
+            for r in range(8):
+                for c in range(8):
+                    if board.is_empty(r, c):
+                        # Check if this placement would block White's only escape
+                        if (r, c) in white_legal_set and len(white_legal_moves) == 1:
+                            # This would block White's last escape - not allowed
+                            continue
+                        apple_mask[r * 8 + c] = True
+            # "No apple" is always valid in mode 3
+            apple_mask[64] = True
+        
+        # Safety: ensure at least one action is valid per dimension
+        # This shouldn't happen in normal gameplay, but prevents crashes
+        if not move_mask.any():
+            # No legal moves - game should end, but allow any to prevent crash
+            move_mask[:] = True
+        if not apple_mask.any():
+            # Should not happen, but allow "no apple" as fallback
+            apple_mask[64] = True
+        
+        # Concatenate into single flattened mask (length 8 + 65 = 73)
+        return np.concatenate([move_mask, apple_mask])

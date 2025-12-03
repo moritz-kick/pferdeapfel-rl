@@ -48,14 +48,14 @@ class Game:
         Returns:
             True if move was successful, False otherwise
         """
-        logger.info(f"make_move called: player={self.current_player}, move_to={move_to}, extra_apple={extra_apple}")
+        logger.debug(f"make_move called: player={self.current_player}, move_to={move_to}, extra_apple={extra_apple}")
 
         if self.game_over:
             logger.warning("Attempted move on game that's already over")
             return False
 
         success = Rules.make_move(self.board, self.current_player, move_to, extra_apple)
-        logger.info(f"Rules.make_move returned: {success}")
+        logger.debug(f"Rules.make_move returned: {success}")
 
         if success:
             # Log move if logging is enabled
@@ -78,7 +78,7 @@ class Game:
             # Special handling for Mode 3 Golden Phase
             if self.board.mode == 3 and self.board.golden_phase_started and self.winner is None:
                 self.winner = "white"
-                logger.info("Golden Phase started! White wins the match, but game continues for points.")
+                logger.debug("Golden Phase started! White wins the match, but game continues for points.")
 
             if win_result:
                 # Game actually ends (Capture, Immobilization, or all Golden Apples used)
@@ -89,12 +89,12 @@ class Game:
                 # Rules: "If Black captures White... White gets 24 points" (if Golden Phase started)
                 # check_win_condition handles this logic and returns "white" or "black".
 
-                logger.info(f"Game over! Winner: {self.winner}")
+                logger.debug(f"Game over! Winner: {self.winner}")
                 self.game_over = True
             else:
-                logger.info(f"Switching turn from {self.current_player}")
+                logger.debug(f"Switching turn from {self.current_player}")
                 self.switch_turn()
-                logger.info(f"Now it's {self.current_player}'s turn")
+                logger.debug(f"Now it's {self.current_player}'s turn")
 
         return success
 
@@ -134,10 +134,10 @@ class Game:
 
         if not legal_moves and not self.game_over:
             # Current player is stuck – determine the winner immediately
-            logger.info(f"{self.current_player} has no legal moves - game ending")
+            logger.debug(f"{self.current_player} has no legal moves - game ending")
             self.winner = Rules.check_win_condition(self.board)
             self.game_over = True
-            logger.info(f"Winner: {self.winner}")
+            logger.debug(f"Winner: {self.winner}")
 
         return legal_moves
 

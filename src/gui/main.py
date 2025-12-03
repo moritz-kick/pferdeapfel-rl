@@ -32,7 +32,7 @@ from src.utils.debug_util import write_debug_log
 from src.utils.toon_parser import parse_toon
 
 
-# --- Placeholder Players for deleted implementations ---
+# --- Placeholder Player for later implementation---
 
 
 class MCTSPlayer(Player):
@@ -111,7 +111,7 @@ class BoardWidget(QWidget):
 
         mode = self.game.board.mode
 
-        # --- MODE 1: Free Placement (Apple FIRST, then Move) ---
+        # --- MODE 1: Free Placement (Apple, then Move) ---
         if mode == 1:
             # If we have a pending apple, this click is for the move
             if self.pending_apple is not None:
@@ -127,7 +127,6 @@ class BoardWidget(QWidget):
                         if isinstance(parent, GameWindow):
                             parent.update_ui()
                     else:
-                        # Move failed (shouldn't happen if in legal_moves, but maybe blocking check)
                         QMessageBox.warning(self, "Invalid Move", "Move invalid.")
                         self.pending_apple = None
                         self.update()
@@ -158,7 +157,7 @@ class BoardWidget(QWidget):
                     if isinstance(parent, GameWindow):
                         parent.update_ui()
 
-        # --- MODE 3: Classic (Move FIRST, then Optional Apple) ---
+        # --- MODE 3: Classic (Move, then Optional Apple) ---
         elif mode == 3:
             # Right-click to confirm move without extra apple
             if event.button() == Qt.MouseButton.RightButton and self.pending_move is not None:
@@ -294,7 +293,6 @@ class GameWindow(QWidget):
     def closeEvent(self, event: Any) -> None:
         """Handle window close event - write debug log if game is incomplete."""
         if self.game and self.logging_button.isChecked() and not self.game.game_over:
-            # Check if both players are random players
             if isinstance(self.white_player, RandomPlayer) and isinstance(self.black_player, RandomPlayer):
                 try:
                     log_path = write_debug_log(self.game, self.debug_log_dir)
@@ -317,7 +315,6 @@ class GameWindow(QWidget):
         for cls in self.rl_player_classes.values():
             label = getattr(cls, "DISPLAY_NAME", cls.__name__).lower()
             if label == self.ppo_label:
-                # PPO is wired manually to support model selection.
                 continue
             factories[label] = lambda color, cls=cls: cls(color)
 
@@ -326,10 +323,8 @@ class GameWindow(QWidget):
     def _discover_ppo_models(self) -> list[Path]:
         """Return PPO model zip files sorted by most recent first."""
         roots = [
-            self.project_root / "data" / "models" / "ppo_pferdeapfel",
+            self.project_root / "data" / "models" / "ppo",
             self.project_root / "data" / "models",
-            self.project_root / "models" / "ppo",
-            self.project_root / "models",
         ]
         candidates: list[Path] = []
 
@@ -533,6 +528,8 @@ class GameWindow(QWidget):
         self.apple_label = QLabel("")
         info_layout.addWidget(self.apple_label)
         info_layout.addStretch()
+        self.ai_status_label = QLabel("")
+        info_layout.addWidget(self.ai_status_label)
         layout.addLayout(info_layout)
 
         # Buttons
@@ -586,7 +583,7 @@ class GameWindow(QWidget):
                         self.mode_combo.setCurrentIndex(mode - 1)
                     self._update_model_selector_enabled()
             except Exception:
-                pass  # Use defaults
+                pass
 
     def create_players(self) -> tuple[Player, Player]:
         """Create player instances based on combo box selections."""
@@ -670,7 +667,6 @@ class GameWindow(QWidget):
             else:
                 winner_name = "White" if self.game.winner == "white" else "Black"
                 # Ensure winner is not None before calling calculate_score
-                # If game_over is True but winner is None (shouldn't happen):
                 winner_arg = self.game.winner if self.game.winner else "white"
                 score = Rules.calculate_score(self.game.board, winner_arg)
                 self.status_label.setText(f"Game Over! {winner_name} wins! Score: {score}")
@@ -738,6 +734,22 @@ class GameWindow(QWidget):
             if success:
                 self.board_widget.update_legal_moves()
                 self.update_ui()
+
+                # Update AI status label
+                metadata = current_player.last_move_metadata
+                if metadata:
+                    source = metadata.get("source", "unknown")
+                    reason = metadata.get("reason", "")
+                    status_text = f"AI Status: {source.upper()}"
+                    if reason:
+                        status_text += f" ({reason})"
+                    self.ai_status_label.setText(status_text)
+
+                    # Log if enabled
+                    if self.game.logging:
+                        logging.info(f"AI Move Metadata: {metadata}")
+                else:
+                    self.ai_status_label.setText("")
         except Exception as e:
             logging.error(f"[GUI ERROR] AI move failed: {e}")
             import traceback
@@ -831,7 +843,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Pferdeäpfel Game GUI")
     parser.add_argument("--load-log", type=Path, help="Path to game log to load")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
-    # Use parse_known_args because QApplication also handles some args
     args, unknown = parser.parse_known_args()
 
     if args.debug:

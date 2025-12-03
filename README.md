@@ -31,3 +31,52 @@ Pferdeäpfel is a two-player abstract strategy game designed by Alex Randolph in
 For development details, see [project_plan.md](documentation/project_plan.md).
 For detailed rules in german, refer to [original_rules_de.md](documentation/original_rules_de.md).
 For detailed rules in english with the differened modes, refer to [rules_en.md](documentation/rules_en.md).
+
+## Training
+
+### Basic PPO Training (against random opponent)
+
+```bash
+# Train PPO agent against random opponents
+uv run python -m src.training.train_ppo --steps 10_000_000
+```
+
+### AlphaZero-Style Self-Play Training
+
+The self-play training implements an AlphaZero-like training loop where the agent continuously improves by playing against its best version:
+
+1. Train the current model by playing against the best model
+2. Periodically evaluate current vs best (1000 games)
+3. If current wins ≥ 55%, current becomes the new best
+4. Repeat
+
+```bash
+# Start fresh self-play training
+uv run python scripts/train_self_play.py
+
+# Start from a model pretrained against random (recommended)
+uv run python scripts/train_self_play.py --from-pretrained data/models/ppo/best_model/best_model.zip
+
+# Continue interrupted training
+uv run python scripts/train_self_play.py --continue
+
+# Custom settings
+uv run python scripts/train_self_play.py \
+    --n-envs 32 \
+    --steps 100000000 \
+    --eval-freq 200000 \
+    --n-eval-games 200 \
+    --win-threshold 0.55
+```
+
+### Benchmarking Models
+
+Compare trained models against various opponents:
+
+```bash
+# Full benchmark (PPO vs Random, Greedy, other PPO models)
+uv run python scripts/benchmark_self_play.py
+
+# Quick benchmark (10 games per matchup)
+uv run python scripts/benchmark_self_play.py --quick
+```

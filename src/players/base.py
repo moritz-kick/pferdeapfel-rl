@@ -12,6 +12,7 @@ class Player(ABC):
     def __init__(self, name: str) -> None:
         """Initialize a player with a name."""
         self.name = name
+        self.last_move_metadata: dict = {}
 
     @abstractmethod
     def get_move(
