@@ -58,7 +58,7 @@ def run_game(white_player, black_player, mode):
         "winner": game.winner,
         "total_moves": total_moves,
         "ppo_moves": ppo_moves_count,
-        "legal_moves": legal_moves_count
+        "legal_moves": legal_moves_count,
     }
 
 
@@ -68,18 +68,22 @@ def run_benchmark(ppo_model_path, quick=False):
     games_per_setup = 2 if quick else 100
 
     # Separate results for PPO vs PPO: track white wins, black wins, draws, and move counts
-    ppo_vs_ppo_results = defaultdict(lambda: {
-        "white_wins": 0,
-        "black_wins": 0,
-        "draws": 0,
-        "total": 0,
-        "total_moves": 0,
-        "legal_moves": 0,
-        "total_ppo_moves": 0
-    })
-    
+    ppo_vs_ppo_results = defaultdict(
+        lambda: {
+            "white_wins": 0,
+            "black_wins": 0,
+            "draws": 0,
+            "total": 0,
+            "total_moves": 0,
+            "legal_moves": 0,
+            "total_ppo_moves": 0,
+        }
+    )
+
     # Results for PPO vs Random (keep existing structure)
-    ppo_vs_random_results = defaultdict(lambda: {"wins": 0, "draws": 0, "total": 0, "legal_moves": 0, "total_ppo_moves": 0})
+    ppo_vs_random_results = defaultdict(
+        lambda: {"wins": 0, "draws": 0, "total": 0, "legal_moves": 0, "total_ppo_moves": 0}
+    )
 
     print(f"Starting benchmark with model: {ppo_model_path}")
     print(f"Games per setup: {games_per_setup}")
@@ -159,13 +163,15 @@ def run_benchmark(ppo_model_path, quick=False):
     print("\n" + "=" * 80)
     print(f"BENCHMARK RESULTS (Duration: {duration:.2f}s)")
     print("=" * 80)
-    
+
     # PPO vs PPO Results
     print("\nPPO vs PPO Results:")
     print("-" * 80)
-    print(f"{'Mode':<8} | {'White Win %':<12} | {'Black Win %':<12} | {'Draw %':<10} | {'Avg Moves':<12} | {'Total Games':<12}")
+    print(
+        f"{'Mode':<8} | {'White Win %':<12} | {'Black Win %':<12} | {'Draw %':<10} | {'Avg Moves':<12} | {'Total Games':<12}"
+    )
     print("-" * 80)
-    
+
     for mode in modes:
         key = f"Mode {mode}"
         data = ppo_vs_ppo_results[key]
@@ -173,24 +179,28 @@ def run_benchmark(ppo_model_path, quick=False):
         black_win_rate = (data["black_wins"] / data["total"]) * 100 if data["total"] > 0 else 0
         draw_rate = (data["draws"] / data["total"]) * 100 if data["total"] > 0 else 0
         avg_moves = data["total_moves"] / data["total"] if data["total"] > 0 else 0
-        
-        print(f"{mode:<8} | {white_win_rate:>11.1f}% | {black_win_rate:>11.1f}% | {draw_rate:>9.1f}% | {avg_moves:>11.1f} | {data['total']:>12}")
-    
+
+        print(
+            f"{mode:<8} | {white_win_rate:>11.1f}% | {black_win_rate:>11.1f}% | {draw_rate:>9.1f}% | {avg_moves:>11.1f} | {data['total']:>12}"
+        )
+
     # Overall PPO vs PPO summary
     overall_white = sum(ppo_vs_ppo_results[f"Mode {m}"]["white_wins"] for m in modes)
     overall_black = sum(ppo_vs_ppo_results[f"Mode {m}"]["black_wins"] for m in modes)
     overall_draws = sum(ppo_vs_ppo_results[f"Mode {m}"]["draws"] for m in modes)
     overall_total = sum(ppo_vs_ppo_results[f"Mode {m}"]["total"] for m in modes)
     overall_moves = sum(ppo_vs_ppo_results[f"Mode {m}"]["total_moves"] for m in modes)
-    
+
     overall_white_rate = (overall_white / overall_total) * 100 if overall_total > 0 else 0
     overall_black_rate = (overall_black / overall_total) * 100 if overall_total > 0 else 0
     overall_draw_rate = (overall_draws / overall_total) * 100 if overall_total > 0 else 0
     overall_avg_moves = overall_moves / overall_total if overall_total > 0 else 0
-    
+
     print("-" * 80)
-    print(f"{'Overall':<8} | {overall_white_rate:>11.1f}% | {overall_black_rate:>11.1f}% | {overall_draw_rate:>9.1f}% | {overall_avg_moves:>11.1f} | {overall_total:>12}")
-    
+    print(
+        f"{'Overall':<8} | {overall_white_rate:>11.1f}% | {overall_black_rate:>11.1f}% | {overall_draw_rate:>9.1f}% | {overall_avg_moves:>11.1f} | {overall_total:>12}"
+    )
+
     # PPO vs Random Results (keep existing format)
     print("\nPPO vs Random Results:")
     print("-" * 80)

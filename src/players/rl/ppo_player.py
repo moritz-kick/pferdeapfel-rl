@@ -115,23 +115,31 @@ class PPOPlayer(Player):
         apple_mask = np.zeros(65, dtype=bool)
         
         if board.mode == 1:
-            # Mode 1: Apple placement is REQUIRED before moving
+            # Mode 1: Apple placement is REQUIRED BEFORE moving
+            # CRITICAL: Cannot place apple on squares we want to move to!
+            # Because after placing the apple, the move would become illegal.
             for r in range(8):
                 for c in range(8):
                     if board.is_empty(r, c):
-                        apple_mask[r * 8 + c] = True
+                        # Exclude squares that are legal move targets
+                        if (r, c) not in legal_move_set:
+                            apple_mask[r * 8 + c] = True
         elif board.mode == 2:
             # Mode 2: Apple is automatic (trail), only "no apple" valid
             apple_mask[64] = True
         elif board.mode == 3:
-            # Mode 3: Apple placement is OPTIONAL
-            # Restriction: Cannot block White's last remaining escape route
+            # Mode 3: Apple placement is OPTIONAL after moving
+            # Restriction 1: Cannot block White's last remaining escape route
+            # Restriction 2: Cannot place on move target (player will be there after move!)
             white_legal_moves = Rules.get_legal_knight_moves(board, "white")
             white_legal_set = set(white_legal_moves)
             
             for r in range(8):
                 for c in range(8):
                     if board.is_empty(r, c):
+                        # Cannot place apple on squares we're moving to
+                        if (r, c) in legal_move_set:
+                            continue
                         # Check if this placement would block White's only escape
                         if (r, c) in white_legal_set and len(white_legal_moves) == 1:
                             # This would block White's last escape - not allowed

@@ -89,6 +89,7 @@ class Rules:
             "golden_phase_started": board.golden_phase_started,
             "white_match_win_declared": getattr(board, "white_match_win_declared", False),
             "white_won_in_brown_phase": getattr(board, "white_won_in_brown_phase", False),
+            "_empty_squares": board._empty_squares.copy(),  # Save cache state
         }
         if hasattr(board, "draw_condition_met"):
             state_snapshot["draw_condition_met"] = board.draw_condition_met
@@ -107,6 +108,7 @@ class Rules:
                 return False
 
             board.grid[apple_row, apple_col] = Board.BROWN_APPLE
+            board._mark_occupied(apple_row, apple_col)  # Update cache
 
             # 2. Move
             legal_moves = Rules.get_legal_knight_moves(board, player)
@@ -116,6 +118,7 @@ class Rules:
 
             new_row, new_col = move_to
             board.grid[new_row, new_col] = Board.WHITE_HORSE if player == "white" else Board.BLACK_HORSE
+            board._mark_occupied(new_row, new_col)  # Update cache
             if player == "white":
                 board.white_pos = (new_row, new_col)
             else:
@@ -125,6 +128,7 @@ class Rules:
             old_pos = state_snapshot["white_pos"] if player == "white" else state_snapshot["black_pos"]
             if isinstance(old_pos, tuple):
                 board.grid[old_pos[0], old_pos[1]] = Board.EMPTY
+                board._mark_empty(old_pos[0], old_pos[1])  # Update cache
 
         # --- MODE 2: Trail Placement ---
         elif board.mode == 2:
@@ -137,13 +141,15 @@ class Rules:
             new_row, new_col = move_to
 
             board.grid[new_row, new_col] = Board.WHITE_HORSE if player == "white" else Board.BLACK_HORSE
+            board._mark_occupied(new_row, new_col)  # Update cache
             if player == "white":
                 board.white_pos = (new_row, new_col)
             else:
                 board.black_pos = (new_row, new_col)
 
-            # 2. Leave Trail (Apple on old position)
+            # 2. Leave Trail (Apple on old position) - old position is NOT empty now
             board.grid[old_pos[0], old_pos[1]] = Board.BROWN_APPLE
+            board._mark_occupied(old_pos[0], old_pos[1])  # Update cache
 
         # --- MODE 3: Classic ---
         elif board.mode == 3:
@@ -170,6 +176,7 @@ class Rules:
                 board.white_match_win_declared = True
 
             board.grid[old_row, old_col] = mandatory_apple
+            board._mark_occupied(old_row, old_col)  # Update cache (old pos now has apple)
 
             # 2. Move
             new_row, new_col = move_to
@@ -180,6 +187,7 @@ class Rules:
                     board.draw_condition_met = True
 
             board.grid[new_row, new_col] = Board.WHITE_HORSE if player == "white" else Board.BLACK_HORSE
+            board._mark_occupied(new_row, new_col)  # Update cache
             if player == "white":
                 board.white_pos = (new_row, new_col)
             else:
@@ -215,6 +223,7 @@ class Rules:
                     board.white_match_win_declared = True
 
                 board.grid[extra_row, extra_col] = optional_apple
+                board._mark_occupied(extra_row, extra_col)  # Update cache
 
         # Save move to history
         board.move_history.append(state_snapshot)
@@ -231,12 +240,12 @@ class Rules:
         board.golden_phase_started = snapshot["golden_phase_started"]
         board.white_match_win_declared = snapshot.get("white_match_win_declared", False)
         board.white_won_in_brown_phase = snapshot.get("white_won_in_brown_phase", False)
+        # Restore empty squares cache
+        if "_empty_squares" in snapshot:
+            board._empty_squares = snapshot["_empty_squares"]
         if "draw_condition_met" in snapshot:
             board.draw_condition_met = snapshot["draw_condition_met"]
         elif hasattr(board, "draw_condition_met"):
-            # If not in snapshot but attribute exists, reset it (or keep as is? logic suggests reset)
-            # Actually, if it wasn't in snapshot, it might not have been set before.
-            # But we added it to __init__, so it should always be there.
             pass
 
     @staticmethod

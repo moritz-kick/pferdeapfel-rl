@@ -2,6 +2,8 @@
 
 import numpy as np
 from src.env.knight_self_play_env import KnightSelfPlayEnv
+from src.game.board import Board
+from src.game.rules import Rules
 
 
 def test_env_sanity():
@@ -53,5 +55,57 @@ def test_env_sanity():
     print("Sanity check complete.")
 
 
+def test_mode_1_action_mask_apple_on_legal_move():
+    """Test that Mode 1 action mask correctly handles apple placement on legal moves.
+    
+    The mask should:
+    - Allow placing apple on a legal move destination IF other moves exist
+    - Forbid placing apple on the ONLY legal move destination (would block self)
+    """
+    env = KnightSelfPlayEnv(mode=1, agent_color="white")
+    obs, info = env.reset()
+    
+    board = env.game.board
+    legal_moves = Rules.get_legal_knight_moves(board, "white")
+    
+    # White starts at (0,0), legal moves are (1,2) and (2,1)
+    assert len(legal_moves) == 2
+    assert (1, 2) in legal_moves
+    assert (2, 1) in legal_moves
+    
+    # Get action mask
+    mask = env.action_masks()
+    apple_mask = mask[8:]  # First 8 are move masks, rest are apple masks
+    
+    # With 2 legal moves, placing apple on either should be ALLOWED
+    idx_1_2 = 1 * 8 + 2  # Square (1,2) -> index 10
+    idx_2_1 = 2 * 8 + 1  # Square (2,1) -> index 17
+    
+    assert apple_mask[idx_1_2] == True, "Should allow apple on (1,2) when 2 moves exist"
+    assert apple_mask[idx_2_1] == True, "Should allow apple on (2,1) when 2 moves exist"
+    
+    # Now block one move so only one remains
+    board.grid[1, 2] = Board.BROWN_APPLE
+    board._mark_occupied(1, 2)
+    
+    legal_moves = Rules.get_legal_knight_moves(board, "white")
+    assert len(legal_moves) == 1
+    assert legal_moves[0] == (2, 1)
+    
+    # Get updated action mask
+    mask = env.action_masks()
+    apple_mask = mask[8:]
+    
+    # With only 1 legal move, placing apple on it should be FORBIDDEN
+    assert apple_mask[idx_2_1] == False, "Should NOT allow apple on (2,1) when it's the only move"
+    
+    # But other empty squares should still be allowed
+    idx_5_5 = 5 * 8 + 5  # Square (5,5) -> index 45
+    assert apple_mask[idx_5_5] == True, "Should allow apple on non-move squares"
+    
+    print("Mode 1 action mask test passed.")
+
+
 if __name__ == "__main__":
     test_env_sanity()
+    test_mode_1_action_mask_apple_on_legal_move()

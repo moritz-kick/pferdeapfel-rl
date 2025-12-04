@@ -218,22 +218,37 @@ class KnightSelfPlayEnv(gym.Env):
                 move_mask[idx] = True
 
         apple_mask = np.zeros(65, dtype=bool)
+        
+        # OPTIMIZATION: Use cached empty squares
+        empty_squares = board.get_empty_squares()
+        
         if board.mode == 1:
-            for r in range(8):
-                for c in range(8):
-                    if board.is_empty(r, c):
+            # Mode 1: Apple placement is REQUIRED BEFORE moving
+            # Can place on any empty square, BUT if placing on a legal move destination,
+            # we must have at least one OTHER legal move remaining
+            has_multiple_moves = len(legal_move_set) > 1
+            for r, c in empty_squares:
+                if (r, c) in legal_move_set:
+                    # Can only place here if we have other moves
+                    if has_multiple_moves:
                         apple_mask[r * 8 + c] = True
+                else:
+                    # Not a legal move destination - always allowed
+                    apple_mask[r * 8 + c] = True
         elif board.mode == 2:
             apple_mask[64] = True
         elif board.mode == 3:
+            # Mode 3: Cannot place on move targets or block White's only escape
             white_legal_moves = Rules.get_legal_knight_moves(board, "white")
             white_legal_set = set(white_legal_moves)
-            for r in range(8):
-                for c in range(8):
-                    if board.is_empty(r, c):
-                        if (r, c) in white_legal_set and len(white_legal_moves) == 1:
-                            continue
-                        apple_mask[r * 8 + c] = True
+            white_only_one_move = len(white_legal_moves) == 1
+            
+            for r, c in empty_squares:
+                if (r, c) in legal_move_set:
+                    continue
+                if white_only_one_move and (r, c) in white_legal_set:
+                    continue
+                apple_mask[r * 8 + c] = True
             apple_mask[64] = True
 
         if not move_mask.any():
@@ -327,26 +342,86 @@ class KnightSelfPlayEnv(gym.Env):
             reward = self._calculate_reward()
             return self._get_observation(), reward, True, False, {"winner": self.game.winner}
 
-        # 6. Game continues - small survival reward to encourage longer games
-        survival_reward = 0.01
+        # 6. Game continues - apply per-move reward shaping
+        # Mode 3 White benefits from longer games (more golden apples = more points)
+        # All other situations should encourage faster, decisive play
+        step_reward = self._get_step_reward()
 
-        return self._get_observation(), survival_reward, False, False, {}
+        return self._get_observation(), step_reward, False, False, {}
+
+    def _get_step_reward(self) -> float:
+        """
+        Calculate per-step reward based on mode and color.
+        
+        Mode 3 White: POSITIVE per-move reward (+0.005)
+            - White benefits from longer games in golden phase
+            - More golden apples placed = higher score
+            - Encourages survival and prolonging the game
+        
+        All other situations: NEGATIVE per-move penalty (-0.005)
+            - Encourages faster, decisive play
+            - Captures and quick wins are better
+            - Prevents aimless wandering
+        """
+        if self.game is None:
+            return 0.0
+        
+        is_mode_3 = self.game.board.mode == 3
+        is_white = self.agent_color == "white"
+        
+        if is_mode_3 and is_white:
+            # White in Mode 3 wants longer games for golden phase scoring
+            return 0.005
+        else:
+            # All other cases: encourage faster play
+            return -0.005
 
     def _calculate_reward(self) -> float:
-        """Calculate final reward based on game outcome."""
+        """
+        Calculate final reward based on game outcome.
+        
+        Mode-aware terminal rewards:
+        - Mode 3 White: Bonus for longer games (golden phase scoring)
+        - Mode 3 Black: Bonus for FASTER wins (capture before golden phase)
+        - Mode 1 & 2: Standard win/loss with slight length considerations
+        """
         if self.game is None:
             return 0.0
 
+        is_mode_3 = self.game.board.mode == 3
+        is_white = self.agent_color == "white"
+        
         if self.game.winner == self.agent_color:
-            # Win! Base reward + bonus for longer games (more learning)
-            game_length_bonus = min(self.move_count * 0.01, 0.5)
-            return 1.0 + game_length_bonus
+            # WIN!
+            if is_mode_3:
+                if is_white:
+                    # White wins - longer games with golden phase = better
+                    # Bonus based on golden apples used (12 - remaining)
+                    golden_used = 12 - self.game.board.golden_apples_remaining
+                    golden_bonus = golden_used * 0.02  # Up to 0.24 bonus
+                    game_length_bonus = min(self.move_count * 0.005, 0.25)
+                    return 1.0 + golden_bonus + game_length_bonus
+                else:
+                    # Black wins - faster is better (capture before golden phase)
+                    # Bonus for quick wins, penalty for slow ones
+                    speed_bonus = max(0.5 - self.move_count * 0.01, 0.0)
+                    return 1.0 + speed_bonus
+            else:
+                # Mode 1 & 2 - slight preference for faster wins
+                speed_bonus = max(0.3 - self.move_count * 0.005, 0.0)
+                return 1.0 + speed_bonus
+                
         elif self.game.winner == "draw":
             return 0.0
         else:
-            # Loss - but less penalty for longer games (agent tried harder)
-            game_length_reduction = min(self.move_count * 0.01, 0.3)
-            return -1.0 + game_length_reduction
+            # LOSS
+            if is_mode_3 and is_white:
+                # White losing - less penalty if survived long (golden phase scoring)
+                survival_reduction = min(self.move_count * 0.005, 0.2)
+                return -1.0 + survival_reduction
+            else:
+                # Black or Mode 1/2 - standard loss penalty
+                return -1.0
 
     def _get_observation(self) -> np.ndarray:
         """Get observation from the agent's perspective."""
@@ -369,11 +444,12 @@ class KnightSelfPlayEnv(gym.Env):
         # Channel 1: Opponent Position
         obs[1, opp_pos[0], opp_pos[1]] = 1.0
 
-        # Channel 2: Blocked Squares
-        for r in range(8):
-            for c in range(8):
-                if not self.game.board.is_empty(r, c):
-                    obs[2, r, c] = 1.0
+        # Channel 2: Blocked Squares - OPTIMIZED using cached empty squares
+        # Instead of checking all 64 squares, mark only non-empty ones
+        empty_squares = self.game.board.get_empty_squares()
+        obs[2, :, :] = 1.0  # Start with all blocked
+        for r, c in empty_squares:
+            obs[2, r, c] = 0.0  # Mark empty squares as unblocked
 
         # Channel 3: Mode ID (Normalized)
         mode_val = 0.0
@@ -474,13 +550,22 @@ class KnightSelfPlayEnv(gym.Env):
         # --- Mask for apple placement (64 squares + 1 for "no apple") ---
         apple_mask = np.zeros(65, dtype=bool)
         
+        # OPTIMIZATION: Use cached empty squares instead of iterating over all 64 squares
+        empty_squares = board.get_empty_squares()
+        
         if board.mode == 1:
-            # Mode 1: Apple placement is REQUIRED before moving
-            # Valid placements are empty squares
-            for r in range(8):
-                for c in range(8):
-                    if board.is_empty(r, c):
+            # Mode 1: Apple placement is REQUIRED BEFORE moving
+            # Can place on any empty square, BUT if placing on a legal move destination,
+            # we must have at least one OTHER legal move remaining (don't block ourselves)
+            has_multiple_moves = len(legal_move_set) > 1
+            for r, c in empty_squares:
+                if (r, c) in legal_move_set:
+                    # Can only place here if we have other moves
+                    if has_multiple_moves:
                         apple_mask[r * 8 + c] = True
+                else:
+                    # Not a legal move destination - always allowed
+                    apple_mask[r * 8 + c] = True
             # "No apple" (index 64) is NOT valid in mode 1
             
         elif board.mode == 2:
@@ -490,28 +575,27 @@ class KnightSelfPlayEnv(gym.Env):
             
         elif board.mode == 3:
             # Mode 3: Apple placement is OPTIONAL after moving
-            # Restriction: Cannot block White's last remaining escape route
+            # Restriction 1: Cannot block White's last remaining escape route
+            # Restriction 2: Cannot place on move target (player will be there after move!)
             white_legal_moves = Rules.get_legal_knight_moves(board, "white")
             white_legal_set = set(white_legal_moves)
+            white_only_one_move = len(white_legal_moves) == 1
             
-            for r in range(8):
-                for c in range(8):
-                    if board.is_empty(r, c):
-                        # Check if this placement would block White's only escape
-                        if (r, c) in white_legal_set and len(white_legal_moves) == 1:
-                            # This would block White's last escape - not allowed
-                            continue
-                        apple_mask[r * 8 + c] = True
+            for r, c in empty_squares:
+                # Cannot place apple on squares we're moving to
+                if (r, c) in legal_move_set:
+                    continue
+                # Check if this placement would block White's only escape
+                if white_only_one_move and (r, c) in white_legal_set:
+                    continue
+                apple_mask[r * 8 + c] = True
             # "No apple" is always valid in mode 3
             apple_mask[64] = True
         
         # Safety: ensure at least one action is valid per dimension
-        # This shouldn't happen in normal gameplay, but prevents crashes
         if not move_mask.any():
-            # No legal moves - game should end, but allow any to prevent crash
             move_mask[:] = True
         if not apple_mask.any():
-            # Should not happen, but allow "no apple" as fallback
             apple_mask[64] = True
         
         # Concatenate into single flattened mask (length 8 + 65 = 73)

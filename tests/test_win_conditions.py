@@ -106,6 +106,9 @@ class TestWinConditions(unittest.TestCase):
             if board.is_valid_square(r, c):
                 board.grid[r, c] = Board.BROWN_APPLE
 
+        # Rebuild cache after direct grid modifications
+        board.rebuild_empty_cache()
+
         winner = Rules.check_win_condition(board, last_mover="white")
         self.assertEqual(winner, "white")
         self.assertTrue(board.white_won_in_brown_phase)
