@@ -102,7 +102,7 @@ def profile_env_components():
     # Create environment
     env = KnightSelfPlayEnv(mode="random", agent_color="random", opponent_policy=None)
     
-    n_episodes = 50
+    n_episodes = 200
     n_steps_total = 0
     
     reset_times = []
@@ -172,33 +172,44 @@ def profile_env_components():
 def profile_with_model():
     """Profile with actual model inference."""
     print("\n" + "=" * 80)
-    print("PROFILING WITH MODEL INFERENCE")
+    print("PROFILING WITH MODEL INFERENCE (Self-Play Phase)")
     print("=" * 80)
     
     from sb3_contrib import MaskablePPO
     from sb3_contrib.common.wrappers import ActionMasker
     from stable_baselines3.common.env_util import make_vec_env
     from stable_baselines3.common.monitor import Monitor
-    
+
     from src.env.knight_self_play_env import KnightSelfPlayEnv
-    
+
     def mask_fn(env):
         base_env = env
         while hasattr(base_env, 'env'):
             base_env = base_env.env
         return base_env.action_masks()
-    
-    def make_env():
-        env = KnightSelfPlayEnv(mode="random", agent_color="random", opponent_policy=None)
+
+    # Create a model to use as opponent
+    print("\nCreating opponent model for self-play simulation...")
+    dummy_env = KnightSelfPlayEnv(mode="random", agent_color="random", opponent_policy=None)
+    dummy_env = ActionMasker(dummy_env, mask_fn)
+    dummy_env = Monitor(dummy_env)
+    opponent_model = MaskablePPO("MlpPolicy", dummy_env, verbose=0)
+    dummy_env.close()
+
+    def make_env_with_opponent():
+        env = KnightSelfPlayEnv(
+            mode="random", agent_color="random", opponent_policy=opponent_model
+        )
         env = ActionMasker(env, mask_fn)
         return Monitor(env)
-    
+
     # Test with different numbers of envs
-    for n_envs in [1, 4, 8, 16]:
+    print("\n📊 Testing different env counts WITH model opponent (self-play):")
+    for n_envs in [1, 4, 8, 16, 32, 64, 256]:
         print(f"\n--- Testing with {n_envs} parallel environments ---")
-        
-        env = make_vec_env(make_env, n_envs=n_envs)
-        
+
+        env = make_vec_env(make_env_with_opponent, n_envs=n_envs)
+
         # Create a small model
         model = MaskablePPO(
             "MlpPolicy",
@@ -208,23 +219,109 @@ def profile_with_model():
             batch_size=32,
             n_epochs=2,
         )
-        
+
         # Measure training time for fixed number of steps
         n_steps = 1024
         n_runs = 2
         run_times = []
-        
+
         for run in range(n_runs):
             start = time.perf_counter()
-            model.learn(total_timesteps=n_steps, progress_bar=False, reset_num_timesteps=(run == 0))
+            model.learn(
+                total_timesteps=n_steps,
+                progress_bar=False,
+                reset_num_timesteps=(run == 0),
+            )
             run_times.append(time.perf_counter() - start)
-        
+
         avg_time = np.mean(run_times)
         steps_per_sec = n_steps / avg_time
-        
+
         print(f"  {n_steps} steps in {avg_time:.3f}s ({steps_per_sec:.0f} steps/s)")
-        
+
         env.close()
+
+
+def profile_warmup_envs():
+    """Profile warmup phase (random opponent) with different env counts."""
+    print("\n" + "=" * 80)
+    print("PROFILING WARMUP PHASE (Random Opponent - No Model Inference)")
+    print("=" * 80)
+    print("\n💡 Warmup uses random opponents = no model.predict() overhead per step")
+    print("   This should scale much better with more environments!\n")
+
+    from sb3_contrib import MaskablePPO
+    from sb3_contrib.common.wrappers import ActionMasker
+    from stable_baselines3.common.env_util import make_vec_env
+    from stable_baselines3.common.monitor import Monitor
+
+    from src.env.knight_self_play_env import KnightSelfPlayEnv
+
+    def mask_fn(env):
+        base_env = env
+        while hasattr(base_env, 'env'):
+            base_env = base_env.env
+        return base_env.action_masks()
+
+    def make_warmup_env():
+        env = KnightSelfPlayEnv(
+            mode="random",
+            agent_color="random",
+            opponent_policy=None,  # Random opponent - no model inference!
+        )
+        env = ActionMasker(env, mask_fn)
+        return Monitor(env)
+
+    results = []
+
+    # Test with different numbers of envs
+    print("📊 Testing different env counts WITHOUT model opponent (warmup):")
+    for n_envs in [1, 4, 8, 16, 32, 64, 128, 256]:
+        print(f"\n--- Testing with {n_envs} parallel environments ---")
+
+        env = make_vec_env(make_warmup_env, n_envs=n_envs)
+
+        # Create a small model
+        model = MaskablePPO(
+            "MlpPolicy",
+            env,
+            verbose=0,
+            n_steps=64,  # Smaller for faster profiling
+            batch_size=32,
+            n_epochs=2,
+        )
+
+        # Measure training time for fixed number of steps
+        n_steps = 2048  # More steps for warmup test
+        n_runs = 3
+        run_times = []
+
+        for run in range(n_runs):
+            start = time.perf_counter()
+            model.learn(
+                total_timesteps=n_steps,
+                progress_bar=False,
+                reset_num_timesteps=(run == 0),
+            )
+            run_times.append(time.perf_counter() - start)
+
+        avg_time = np.mean(run_times)
+        steps_per_sec = n_steps / avg_time
+
+        results.append((n_envs, steps_per_sec))
+        print(f"  {n_steps} steps in {avg_time:.3f}s ({steps_per_sec:.0f} steps/s)")
+
+        env.close()
+
+    # Find optimal
+    best_n_envs, best_speed = max(results, key=lambda x: x[1])
+    print(f"\n✅ OPTIMAL for warmup: {best_n_envs} envs ({best_speed:.0f} steps/s)")
+
+    # Compare with self-play optimal
+    print("\n📈 Comparison:")
+    print("   - Warmup (random opponent): More envs = better (no model inference)")
+    print("   - Self-play (model opponent): ~16 envs optimal (model inference bottleneck)")
+    print(f"\n💡 Recommendation: Use --n-envs {best_n_envs} for warmup phase")
 
 
 def profile_opponent_overhead():
@@ -479,7 +576,8 @@ def main():
     # Run profiling tests
     profile_env_components()
     profile_opponent_overhead()
-    profile_with_model()
+    profile_warmup_envs()  # NEW: Test warmup phase scaling
+    profile_with_model()   # Test self-play phase scaling
     profile_evaluation_games()
     
     # Detailed cProfile
@@ -490,15 +588,13 @@ def main():
     print("PROFILING COMPLETE")
     print("=" * 80)
     print("""
-OPTIMIZATIONS IMPLEMENTED:
-1. ✅ Cached empty squares in Board class (O(1) lookups)
-2. ✅ SubprocVecEnv option for true parallel env execution (--use-subproc)
-3. ✅ Parallel evaluation using ProcessPoolExecutor (--n-eval-workers)
-4. ✅ Optimized action mask computation using cached empty squares
 
 USAGE:
-  # Default (DummyVecEnv, 4 eval workers)
+  # Default (DummyVecEnv, 16 eval workers)
   python -m src.training.train_ppo_self_play
+  
+  # With warmup phase (15M steps vs random, then self-play)
+  python -m src.training.train_ppo_self_play --fresh --warmup-steps 15_000_000
   
   # With SubprocVecEnv for better parallel env stepping
   python -m src.training.train_ppo_self_play --use-subproc
@@ -509,6 +605,13 @@ USAGE:
   # Sequential eval (for debugging)
   python -m src.training.train_ppo_self_play --n-eval-workers 0
 
+KEY INSIGHT:
+  - WARMUP (random opponent): More envs = better throughput (no model inference)
+  - SELF-PLAY (model opponent): ~16 envs optimal (model.predict() bottleneck)
+  
+  The warmup phase can use more envs for faster training since there's no
+  opponent model inference overhead per step.
+
 ABOUT BATCHED OPPONENT INFERENCE:
   When using a model as opponent, each step requires model.predict() which is slow
   for single observations. "Batched inference" would mean:
@@ -516,7 +619,7 @@ ABOUT BATCHED OPPONENT INFERENCE:
   - Run predict() on all of them at once (GPU batching)
   - Distribute results back to environments
   This is complex to implement correctly but could give 2-3x speedup.
-  Current approach: Use random opponent for training, model for eval only.
+  Current approach: Use random opponent for warmup, model for self-play only.
 """)
 
 

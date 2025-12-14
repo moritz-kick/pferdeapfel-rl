@@ -19,20 +19,21 @@ class TestGameModes(unittest.TestCase):
         self.black = MockPlayer("Black")
 
     def test_mode_1_free_placement(self) -> None:
-        """Test Mode 1: Free Placement (Apple -> Move)."""
+        """Test Mode 1: Free Placement (Move -> Apple)."""
         game = Game(self.white, self.black, mode=1)
         board = game.board
 
         # White turn
-        # Try to move without apple (should fail)
+        # Try to move without apple (should fail - apple is required)
         success = Rules.make_move(board, "white", (1, 2), None)
         self.assertFalse(success)
 
         # Try to place apple on occupied square (should fail)
-        success = Rules.make_move(board, "white", (1, 2), (0, 0))  # (0,0) has white horse
+        # After move to (1,2), trying to place apple on (7,7) which has black horse
+        success = Rules.make_move(board, "white", (1, 2), (7, 7))
         self.assertFalse(success)
 
-        # Valid move: Place apple at (5,5), move to (1,2)
+        # Valid move: Move to (1,2), then place apple at (5,5)
         success = Rules.make_move(board, "white", (1, 2), (5, 5))
         self.assertTrue(success)
 
@@ -96,14 +97,11 @@ class TestGameModes(unittest.TestCase):
         self.assertEqual(winner, "white")
 
     def test_mode_1_apple_on_only_legal_move(self) -> None:
-        """Test Mode 1: Placing apple on the only legal move blocks self and fails.
+        """Test Mode 1: Placing apple on own new position fails.
         
-        Edge case: In Mode 1, if a player has only one legal move and places
-        the apple on that square, the move should fail because:
-        1. Apple is placed first (blocking the square)
-        2. Then legal moves are calculated (the square is no longer empty)
-        3. The intended move is no longer legal
-        4. The entire action is rolled back
+        Edge case: In Mode 1, after moving to a square, the player cannot
+        place an apple on that same square because they are now occupying it.
+        The apple placement requires an EMPTY square.
         """
         game = Game(self.white, self.black, mode=1)
         board = game.board
@@ -118,10 +116,10 @@ class TestGameModes(unittest.TestCase):
         self.assertEqual(len(legal_moves), 1)
         self.assertEqual(legal_moves[0], (2, 1))
 
-        # Try to place apple on (2, 1) - the only legal move - and then move there
-        # This should FAIL because after placing the apple, (2,1) is no longer empty
+        # Try to move to (2, 1) and place apple on same square
+        # This should FAIL because after moving, player occupies (2,1) so it's not empty
         success = Rules.make_move(board, "white", (2, 1), (2, 1))
-        self.assertFalse(success, "Should not be able to place apple on own only legal move")
+        self.assertFalse(success, "Should not be able to place apple on own new position")
 
         # Board should be unchanged (rollback)
         self.assertEqual(board.white_pos, (0, 0))
@@ -130,10 +128,10 @@ class TestGameModes(unittest.TestCase):
         self.assertEqual(board.grid[2, 1], Board.EMPTY)
 
     def test_mode_1_can_place_apple_on_one_of_multiple_moves(self) -> None:
-        """Test Mode 1: Can place apple on one legal move if others remain.
+        """Test Mode 1: Can place apple on any empty square after moving.
         
-        If a player has multiple legal moves, they can place an apple on one
-        of them - they just can't move there anymore.
+        After moving, the player can place an apple on any empty square,
+        including squares that were legal move targets (they didn't move there).
         """
         game = Game(self.white, self.black, mode=1)
         board = game.board
@@ -142,9 +140,9 @@ class TestGameModes(unittest.TestCase):
         legal_moves = Rules.get_legal_knight_moves(board, "white")
         self.assertEqual(len(legal_moves), 2)
 
-        # Place apple on (1, 2), move to (2, 1) - this should succeed
+        # Move to (2, 1), then place apple on (1, 2) - this should succeed
         success = Rules.make_move(board, "white", (2, 1), (1, 2))
-        self.assertTrue(success, "Should be able to block one move if another remains")
+        self.assertTrue(success, "Should be able to place apple on any empty square after moving")
 
         # Verify the result
         self.assertEqual(board.white_pos, (2, 1))

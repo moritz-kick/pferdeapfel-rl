@@ -1040,13 +1040,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--n-envs",
         type=int,
-        default=64,
-        help="Number of parallel environments (default: 64).",
+        default=16,
+        help="Number of parallel environments (default: 16). Profiling shows 16 is optimal; 64+ causes slowdown due to opponent model inference overhead.",
     )
     parser.add_argument(
         "--use-subproc",
         action="store_true",
-        help="Use SubprocVecEnv for true parallel env execution (slower startup, faster throughput).",
+        help="Use SubprocVecEnv for true parallel env execution. WARNING: With model opponents, DummyVecEnv is often faster due to model loading overhead per subprocess.",
     )
     parser.add_argument(
         "--steps",
@@ -1069,8 +1069,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--n-eval-workers",
         type=int,
-        default=4,
-        help="Number of parallel workers for evaluation (default: 4, 0=sequential).",
+        default=16,
+        help="Number of parallel workers for evaluation (default: 16, 0=sequential). Higher values speed up the 1300-game evaluation phase.",
     )
     parser.add_argument(
         "--win-threshold",
@@ -1090,6 +1090,20 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Path to a pretrained model to start from (e.g., from random training).",
     )
+    parser.add_argument(
+        "--warmup-steps",
+        type=int,
+        default=0,
+        help="Train against random opponent for N steps before starting self-play. "
+             "Recommended: 15_000_000 for AlphaZero-style curriculum. 0 = no warmup.",
+    )
+    parser.add_argument(
+        "--warmup-n-envs",
+        type=int,
+        default=64,
+        help="Number of envs during warmup phase (default: 64). "
+             "Warmup can use more envs since there's no model inference overhead.",
+    )
     return parser.parse_args()
 
 
@@ -1105,6 +1119,16 @@ def main() -> None:
     models_dir.mkdir(parents=True, exist_ok=True)
     best_model_dir.mkdir(parents=True, exist_ok=True)
     logs_dir.mkdir(parents=True, exist_ok=True)
+    
+    # If --fresh, clear the best model directory to start completely fresh
+    if args.fresh:
+        best_model_file = best_model_dir / "best_model.zip"
+        if best_model_file.exists():
+            logger.info(f"--fresh: Removing old best model {best_model_file}")
+            best_model_file.unlink()
+        info_file = best_model_dir / "info.txt"
+        if info_file.exists():
+            info_file.unlink()
     
     # Create environments
     vec_env_cls = SubprocVecEnv if args.use_subproc else DummyVecEnv
@@ -1192,6 +1216,81 @@ def main() -> None:
                 f.write(f"Date: {datetime.now().isoformat()}\n")
             logger.info("Saved initial model as generation 0 best")
     
+    # ========================================================================
+    # WARMUP PHASE: Train against random before self-play (AlphaZero-style)
+    # ========================================================================
+    if args.warmup_steps > 0 and not args.continue_training:
+        warmup_envs = args.warmup_n_envs
+        logger.info(f"""
+{'='*60}
+WARMUP PHASE: Training vs Random Opponent
+{'='*60}
+Warmup Steps: {args.warmup_steps:,}
+Warmup Envs: {warmup_envs} (more envs OK - no model inference overhead)
+This builds a strong foundation before self-play begins.
+{'='*60}
+        """)
+        
+        # Create warmup environments (no opponent model = random)
+        def make_warmup_env():
+            warmup_env = KnightSelfPlayEnv(
+                mode="random",
+                agent_color="random",
+                opponent_policy=None,  # Random opponent
+            )
+            warmup_env = ActionMasker(warmup_env, mask_fn)
+            return Monitor(warmup_env)
+        
+        if args.use_subproc:
+            warmup_vec_env = SubprocVecEnv([make_warmup_env for _ in range(warmup_envs)])
+        else:
+            warmup_vec_env = make_vec_env(make_warmup_env, n_envs=warmup_envs)
+        
+        # Set the warmup environment
+        model.set_env(warmup_vec_env)
+        
+        # Train against random
+        model.learn(
+            total_timesteps=args.warmup_steps,
+            progress_bar=True,
+            reset_num_timesteps=True,
+        )
+        
+        # Save warmup model as best for self-play phase
+        model.save(str(best_model_dir / "best_model"))
+        with open(best_model_dir / "info.txt", "w") as f:
+            f.write("Generation: 0\n")
+            f.write(f"Timesteps: {args.warmup_steps}\n")
+            f.write(f"Date: {datetime.now().isoformat()}\n")
+            f.write("Note: Warmup model trained vs Random\n")
+        logger.info(f"Warmup complete! Saved warmup model as initial best.")
+        
+        # Clean up warmup env
+        warmup_vec_env.close()
+        
+        # Create new self-play environments that use the warmup model as opponent
+        logger.info("Creating self-play environments with trained opponent...")
+        
+        def make_selfplay_env():
+            return create_self_play_env(best_model_path=best_model_dir, mode="random")
+        
+        if args.use_subproc:
+            env = SubprocVecEnv([make_selfplay_env for _ in range(args.n_envs)])
+        else:
+            env = make_vec_env(make_selfplay_env, n_envs=args.n_envs)
+        
+        # Switch to new environment for self-play phase
+        model.set_env(env)
+        
+        logger.info(f"""
+{'='*60}
+WARMUP COMPLETE - Starting Self-Play Phase
+{'='*60}
+Remaining Steps: {args.steps:,}
+Now training against the warmup model (and future best models).
+{'='*60}
+        """)
+    
     # Callbacks
     self_play_callback = SelfPlayCallback(
         eval_freq=args.eval_freq,
@@ -1219,12 +1318,23 @@ def main() -> None:
     # Train!
     vec_env_type = "SubprocVecEnv" if args.use_subproc else "DummyVecEnv"
     eval_type = f"{args.n_eval_workers} workers" if args.n_eval_workers > 0 else "sequential"
+    
+    # Performance note
+    perf_note = ""
+    if args.n_envs > 32:
+        perf_note = "\n⚠️  WARNING: n_envs may be suboptimal. Profiling shows 16 is fastest."
+    
+    # Warmup note
+    warmup_note = ""
+    if args.warmup_steps > 0:
+        warmup_note = f"\nWarmup Phase: {args.warmup_steps:,} steps vs Random (already completed)"
+    
     logger.info(f"""
 {'='*60}
 Starting AlphaZero-style Self-Play Training
 {'='*60}
-Total Timesteps: {args.steps:,}
-Parallel Environments: {args.n_envs} ({vec_env_type})
+Total Timesteps: {args.steps:,}{warmup_note}
+Parallel Environments: {args.n_envs} ({vec_env_type}){perf_note}
 Evaluation: {eval_type}
 Evaluation Frequency: {args.eval_freq:,} steps
 Eval Games per Check: {args.n_eval_games}

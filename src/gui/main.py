@@ -62,8 +62,8 @@ class BoardWidget(QWidget):
         self.selected_square: Optional[tuple[int, int]] = None
         # Mode 3: Move waiting for extra apple or confirmation
         self.pending_move: Optional[tuple[int, int]] = None
-        # Mode 1: Apple waiting for move
-        self.pending_apple: Optional[tuple[int, int]] = None
+        # Mode 1: Move waiting for required apple placement
+        self.pending_move_mode1: Optional[tuple[int, int]] = None
         self.legal_moves: list[tuple[int, int]] = []
         self.setMinimumSize(
             self.BOARD_MARGIN * 2 + self.SQUARE_SIZE * 8,
@@ -111,15 +111,17 @@ class BoardWidget(QWidget):
 
         mode = self.game.board.mode
 
-        # --- MODE 1: Free Placement (Apple, then Move) ---
+        # --- MODE 1: Free Placement (Move, then Apple) ---
         if mode == 1:
-            # If we have a pending apple, this click is for the move
-            if self.pending_apple is not None:
-                if square in self.legal_moves:
-                    # Execute move with the pending apple
-                    success = self.game.make_move(square, self.pending_apple)
+            # If we have a pending move, this click is for the apple placement
+            if self.pending_move_mode1 is not None:
+                # Check if clicked square is valid for apple placement
+                # Must be empty AND not the move destination (player will be there)
+                if self.game.board.is_empty(square[0], square[1]) and square != self.pending_move_mode1:
+                    # Execute move with the apple placement
+                    success = self.game.make_move(self.pending_move_mode1, square)
                     if success:
-                        self.pending_apple = None
+                        self.pending_move_mode1 = None
                         self.selected_square = None
                         self.update_legal_moves()
                         self.update()
@@ -128,23 +130,20 @@ class BoardWidget(QWidget):
                             parent.update_ui()
                     else:
                         QMessageBox.warning(self, "Invalid Move", "Move invalid.")
-                        self.pending_apple = None
+                        self.pending_move_mode1 = None
                         self.update()
                 else:
-                    # Clicked somewhere else, cancel pending apple
-                    self.pending_apple = None
+                    # Clicked invalid square for apple, cancel pending move
+                    self.pending_move_mode1 = None
                     self.selected_square = None
                     self.update()
 
-            # No pending apple, this click is to place the apple
+            # No pending move, this click is to select the move destination
             else:
-                if self.game.board.is_empty(square[0], square[1]):
-                    self.pending_apple = square
+                if square in self.legal_moves:
+                    self.pending_move_mode1 = square
                     self.selected_square = square
                     self.update()
-                else:
-                    # Clicked occupied square
-                    pass
 
         # --- MODE 2: Trail Placement (Just Move) ---
         elif mode == 2:
@@ -683,10 +682,10 @@ class GameWindow(QWidget):
             if isinstance(current, HumanPlayer):
                 mode = self.game.board.mode
                 if mode == 1:
-                    if self.board_widget.pending_apple:
-                        status_text += " - Select move destination"
-                    else:
+                    if self.board_widget.pending_move_mode1:
                         status_text += " - Select empty square to place apple"
+                    else:
+                        status_text += " - Select move destination"
                 elif mode == 3 and self.board_widget.pending_move:
                     status_text += " - Click empty square for extra apple, or right-click to skip"
             self.status_label.setText(status_text)
@@ -769,7 +768,7 @@ class GameWindow(QWidget):
                 "- 1, 2, 3: Restart in Mode 1, 2, or 3\n"
                 "- H: Show this help\n\n"
                 "Modes:\n"
-                "1. Free Placement: Place apple -> Move\n"
+                "1. Free Placement: Move -> Place apple\n"
                 "2. Trail Placement: Move -> Leave trail\n"
                 "3. Classic: Mandatory Apple -> Move -> Optional Apple",
             )

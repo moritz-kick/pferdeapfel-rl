@@ -6,15 +6,15 @@ This project now supports three distinct modi (game modes). Each mode defines ho
 - Horses always move like chess knights. If a destination is occupied, that move is illegal.
 - White moves first. To keep experiments fair, randomly assign algorithms to White/Black **before** a game starts (e.g., during training or evaluation) so that both get equal exposure to playing first.
 
-## Mode 1 – Free Placement
+## Mode 1 – Free Placement (Move First)
 
-1. At the start of every turn, the active player must place a plain horse apple on **any** empty square.
-2. After placing the apple, the player makes a legal knight move.
+1. The active player makes a legal knight move.
+2. After moving, the player must place a plain horse apple on **any** empty square (including the square they just left).
 3. There are no color phases and no golden apples. Apples are identical blockers.
 4. The first horse that cannot move on its turn loses the game immediately, regardless of how many apples are on the board.
 5. Captures are allowed for both players and win the game.
 
-This mode emphasizes planning traps through proactive blocking.
+This mode emphasizes planning traps through proactive blocking. The move-first order ensures the action space dimensions are independent.
 
 ## Mode 2 – Trail Placement
 

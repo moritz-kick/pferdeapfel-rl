@@ -97,26 +97,20 @@ class Rules:
         # Initialize draw flag for this move (Mode 3)
         board.draw_condition_met = False
 
-        # --- MODE 1: Free Placement ---
+        # --- MODE 1: Move First, Then Free Placement ---
+        # Order: 1) Move, 2) Place apple on any empty square (REQUIRED)
+        # This eliminates the action-space dependency issue where placing
+        # before moving creates invalid (move, apple) combinations.
         if board.mode == 1:
-            # 1. Place Apple (Required)
-            if extra_apple_placement is None:
-                return False
-
-            apple_row, apple_col = extra_apple_placement
-            if not board.is_empty(apple_row, apple_col):
-                return False
-
-            board.grid[apple_row, apple_col] = Board.BROWN_APPLE
-            board._mark_occupied(apple_row, apple_col)  # Update cache
-
-            # 2. Move
+            # 1. Move first
             legal_moves = Rules.get_legal_knight_moves(board, player)
             if move_to not in legal_moves:
-                Rules._rollback(board, state_snapshot)
                 return False
 
+            old_pos = board.get_horse_position(player)
             new_row, new_col = move_to
+
+            # Execute the move
             board.grid[new_row, new_col] = Board.WHITE_HORSE if player == "white" else Board.BLACK_HORSE
             board._mark_occupied(new_row, new_col)  # Update cache
             if player == "white":
@@ -124,11 +118,22 @@ class Rules:
             else:
                 board.black_pos = (new_row, new_col)
 
-            # Clear old position (it's empty now)
-            old_pos = state_snapshot["white_pos"] if player == "white" else state_snapshot["black_pos"]
-            if isinstance(old_pos, tuple):
-                board.grid[old_pos[0], old_pos[1]] = Board.EMPTY
-                board._mark_empty(old_pos[0], old_pos[1])  # Update cache
+            # Clear old position
+            board.grid[old_pos[0], old_pos[1]] = Board.EMPTY
+            board._mark_empty(old_pos[0], old_pos[1])  # Update cache
+
+            # 2. Place Apple (Required) - AFTER the move
+            if extra_apple_placement is None:
+                Rules._rollback(board, state_snapshot)
+                return False
+
+            apple_row, apple_col = extra_apple_placement
+            if not board.is_empty(apple_row, apple_col):
+                Rules._rollback(board, state_snapshot)
+                return False
+
+            board.grid[apple_row, apple_col] = Board.BROWN_APPLE
+            board._mark_occupied(apple_row, apple_col)  # Update cache
 
         # --- MODE 2: Trail Placement ---
         elif board.mode == 2:

@@ -96,10 +96,14 @@ class KnightSelfPlayEnv(gym.Env):
         
         # Move counter for shaping rewards
         self.move_count = 0
+        
+        # Cache for opponent model type check (avoids isinstance every move)
+        self._opponent_is_maskable: Optional[bool] = None
 
     def set_opponent_policy(self, policy: Any) -> None:
         """Update the opponent policy (useful for curriculum learning)."""
         self.opponent_policy = policy
+        self._opponent_is_maskable = None  # Reset cache
 
     def reset(
         self,
@@ -155,14 +159,19 @@ class KnightSelfPlayEnv(gym.Env):
             opp_obs = self._get_observation_for_player(opp_color)
             action = None
             if hasattr(self.opponent_policy, 'predict'):
-                # If opponent is a MaskablePPO model, provide action masks for its color
-                try:
-                    from sb3_contrib import MaskablePPO  # type: ignore
-                    from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy  # type: ignore
-                    is_maskable = isinstance(self.opponent_policy, MaskablePPO) and isinstance(getattr(self.opponent_policy, 'policy', None), MaskableActorCriticPolicy)
-                except Exception:
-                    is_maskable = False
-                if is_maskable:
+                # Check if opponent is MaskablePPO (cached for performance)
+                if self._opponent_is_maskable is None:
+                    try:
+                        from sb3_contrib import MaskablePPO  # type: ignore
+                        from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy  # type: ignore
+                        self._opponent_is_maskable = (
+                            isinstance(self.opponent_policy, MaskablePPO) and 
+                            isinstance(getattr(self.opponent_policy, 'policy', None), MaskableActorCriticPolicy)
+                        )
+                    except Exception:
+                        self._opponent_is_maskable = False
+                
+                if self._opponent_is_maskable:
                     opp_masks = self._get_action_masks_for_color(opp_color)
                     action, _ = self.opponent_policy.predict(opp_obs, deterministic=False, action_masks=opp_masks)
                 else:
@@ -181,20 +190,35 @@ class KnightSelfPlayEnv(gym.Env):
             if apple_idx < 64:
                 extra_apple = (apple_idx // 8, apple_idx % 8)
 
-            # If move is illegal, fall back to random legal move
+            # If move is illegal, fall back to random legal move with proper apple
             if move_to not in legal_moves:
                 move_to = legal_moves[self.np_random.integers(0, len(legal_moves))]
-                extra_apple = self._get_random_valid_apple()
+                extra_apple = self._get_random_valid_apple_for_move(opp_color, move_to)
         else:
             # Random opponent - just pick from legal moves
             move_to = legal_moves[self.np_random.integers(0, len(legal_moves))]
-            extra_apple = self._get_random_valid_apple()
+            extra_apple = self._get_random_valid_apple_for_move(opp_color, move_to)
 
         success = self.game.make_move(move_to, extra_apple)
         
-        # If move failed (bad apple), try again without apple
+        # If move failed, this is a bug - log details and try to recover
         if not success:
-            self.game.make_move(move_to, None)
+            # Get more context for debugging
+            board = self.game.board
+            is_apple_empty = board.is_empty(extra_apple[0], extra_apple[1]) if extra_apple else "N/A"
+            opp_pos = board.get_horse_position(opp_color)
+            logger.warning(
+                f"Opponent move failed unexpectedly: move={move_to}, apple={extra_apple}, mode={board.mode}, "
+                f"opp_pos={opp_pos}, apple_square_empty={is_apple_empty}"
+            )
+            
+            # Try to recover by making the move without optional apple
+            if board.mode == 1:
+                # Mode 1: apple is required - try with player's old position
+                success = self.game.make_move(move_to, opp_pos)
+            elif board.mode == 3:
+                # Mode 3: apple is optional - try without it
+                success = self.game.make_move(move_to, None)
 
         return not self.game.game_over
 
@@ -223,18 +247,16 @@ class KnightSelfPlayEnv(gym.Env):
         empty_squares = board.get_empty_squares()
         
         if board.mode == 1:
-            # Mode 1: Apple placement is REQUIRED BEFORE moving
-            # Can place on any empty square, BUT if placing on a legal move destination,
-            # we must have at least one OTHER legal move remaining
-            has_multiple_moves = len(legal_move_set) > 1
+            # Mode 1: Apple placement is REQUIRED AFTER moving
+            # The player moves first, then places apple on any empty square.
+            # Since the move happens first, the player's current position becomes empty
+            # and is a valid apple placement target.
+            # IMPORTANT: Exclude legal move destinations since one will be occupied.
             for r, c in empty_squares:
-                if (r, c) in legal_move_set:
-                    # Can only place here if we have other moves
-                    if has_multiple_moves:
-                        apple_mask[r * 8 + c] = True
-                else:
-                    # Not a legal move destination - always allowed
+                if (r, c) not in legal_move_set:
                     apple_mask[r * 8 + c] = True
+            # Also allow placing on player's current position (will be empty after move)
+            apple_mask[current_pos[0] * 8 + current_pos[1]] = True
         elif board.mode == 2:
             apple_mask[64] = True
         elif board.mode == 3:
@@ -258,8 +280,116 @@ class KnightSelfPlayEnv(gym.Env):
 
         return np.concatenate([move_mask, apple_mask])
 
+    def _get_random_valid_apple_for_move(self, player: str, move_to: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+        """Get a random valid apple placement position, accounting for the move being made.
+        
+        For Mode 1: The player's old position will be empty after the move, so it's valid.
+                    The move destination is where the player will be, so it's invalid.
+        For Mode 2: Apple is automatic (trail), no choice needed.
+        For Mode 3: Apple is optional, can place on any empty square except move destination
+                    and cannot block White's only escape.
+        """
+        if self.game is None:
+            return None
+        
+        board = self.game.board
+        mode = board.mode
+        
+        if mode == 2:
+            return None  # Mode 2 handles apple automatically
+        
+        current_pos = board.get_horse_position(player)
+        
+        # Build list of valid apple squares
+        valid_squares = []
+        
+        if mode == 1:
+            # Mode 1: Required apple AFTER move
+            # Valid squares: all currently empty + player's current position (will be empty)
+            # Invalid: move destination (player will be there)
+            for r in range(8):
+                for c in range(8):
+                    if board.is_empty(r, c) and (r, c) != move_to:
+                        valid_squares.append((r, c))
+            # Player's current position will be empty after they move
+            if current_pos != move_to:  # Safety check
+                valid_squares.append(current_pos)
+        elif mode == 3:
+            # Mode 3: Optional apple after move
+            # The turn sequence in Mode 3 is:
+            # 1. Mandatory apple placed on current position
+            # 2. Move to new position
+            # 3. Optional apple on any empty square
+            # 
+            # Restriction: Cannot block White's only escape route
+            # This is checked AFTER the mandatory apple and move, so we must simulate.
+            
+            # Find squares that will be empty after the move (for optional apple)
+            # These are currently empty squares, minus move_to (player will be there)
+            # Note: current_pos currently has the player, so it's not in empty squares
+            for r in range(8):
+                for c in range(8):
+                    if not board.is_empty(r, c):
+                        continue
+                    if (r, c) == move_to:
+                        continue
+                    valid_squares.append((r, c))
+            
+            # Simulate White's legal moves AFTER the mandatory apple and move
+            # to correctly apply the "can't block White's only escape" rule
+            sim_white_legal = []
+            
+            # Determine where White will be after this move
+            if player == "white":
+                # White is moving, so White will be at move_to
+                sim_white_pos = move_to
+            else:
+                # Black is moving, White stays where they are
+                sim_white_pos = board.white_pos
+            
+            # Special case: if Black is capturing White, White has no moves (game over)
+            if player == "black" and move_to == board.white_pos:
+                # Black is capturing White, optional apple check doesn't matter
+                pass  # sim_white_legal stays empty, no filtering needed
+            else:
+                # After the move:
+                # - current_pos will have mandatory apple (was player's position)
+                # - move_to will have the moving player
+                # Calculate White's legal moves in this simulated state
+                for dr, dc in Rules.KNIGHT_MOVES:
+                    target = (sim_white_pos[0] + dr, sim_white_pos[1] + dc)
+                    if 0 <= target[0] < 8 and 0 <= target[1] < 8:
+                        # Check if target will be blocked after the move
+                        if target == move_to:
+                            continue  # Player will be there (same as sim_white_pos if White is moving)
+                        if target == current_pos:
+                            continue  # Mandatory apple will be there
+                        # Check if target is Black's position (can't move there)
+                        if player == "black" and target == board.black_pos:
+                            continue  # Black is still there (hasn't moved yet in simulation context? No, Black moved to move_to)
+                        # Actually, if Black is moving, Black will be at move_to (already handled)
+                        # If White is moving, Black stays at board.black_pos
+                        if player == "white" and target == board.black_pos:
+                            continue  # Black is there, White can't capture in Mode 3
+                        # Check if currently empty (and will remain empty)
+                        if board.is_empty(target[0], target[1]):
+                            sim_white_legal.append(target)
+            
+            # Filter out squares that would block White's only escape
+            if len(sim_white_legal) == 1:
+                only_escape = sim_white_legal[0]
+                valid_squares = [sq for sq in valid_squares if sq != only_escape]
+            
+            # 50% chance to not place apple at all
+            if self.np_random.random() < 0.5:
+                return None
+        
+        if valid_squares:
+            return valid_squares[self.np_random.integers(0, len(valid_squares))]
+        return None
+
     def _get_random_valid_apple(self) -> Optional[Tuple[int, int]]:
-        """Get a random valid apple placement position."""
+        """Get a random valid apple placement position (legacy, for random opponent)."""
         if self.game is None:
             return None
         
@@ -554,18 +684,19 @@ class KnightSelfPlayEnv(gym.Env):
         empty_squares = board.get_empty_squares()
         
         if board.mode == 1:
-            # Mode 1: Apple placement is REQUIRED BEFORE moving
-            # Can place on any empty square, BUT if placing on a legal move destination,
-            # we must have at least one OTHER legal move remaining (don't block ourselves)
-            has_multiple_moves = len(legal_move_set) > 1
+            # Mode 1: Apple placement is REQUIRED AFTER moving
+            # The player moves first, then places apple on any empty square.
+            # Since the move happens first, the player's OLD position becomes empty
+            # and is a valid apple placement target.
+            # IMPORTANT: We must exclude legal move destinations because after the
+            # move, one of them will be occupied by the player. Since we don't know
+            # which move will be chosen (MultiDiscrete chooses independently), we
+            # exclude ALL legal move targets to be safe.
             for r, c in empty_squares:
-                if (r, c) in legal_move_set:
-                    # Can only place here if we have other moves
-                    if has_multiple_moves:
-                        apple_mask[r * 8 + c] = True
-                else:
-                    # Not a legal move destination - always allowed
+                if (r, c) not in legal_move_set:  # Exclude move destinations
                     apple_mask[r * 8 + c] = True
+            # Also allow placing on player's current position (will be empty after move)
+            apple_mask[current_pos[0] * 8 + current_pos[1]] = True
             # "No apple" (index 64) is NOT valid in mode 1
             
         elif board.mode == 2:

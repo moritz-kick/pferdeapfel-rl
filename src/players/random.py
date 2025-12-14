@@ -172,22 +172,27 @@ class RandomPlayer(Player):
 
         # --- Legacy/Other Modes Logic ---
         elif board.mode == 1:
-            # Mode 1: Must place apple.
-            # Find empty squares
+            # Mode 1: Must place apple AFTER the move.
+            # Find empty squares (these will be valid after move)
+            current_pos = board.get_horse_position(self.name.lower())
             empty_squares = []
             for row in range(board.BOARD_SIZE):
                 for col in range(board.BOARD_SIZE):
                     if board.is_empty(row, col):
                         empty_squares.append((row, col))
 
-            if empty_squares:
-                # Ensure we don't place the apple on the square we want to move to
-                if move_to in empty_squares:
-                    empty_squares.remove(move_to)
+            # After the move:
+            # - The player's current position will be empty (they left)
+            # - The move destination will be occupied (they're there now)
+            # So: remove move_to, add current_pos
+            if move_to in empty_squares:
+                empty_squares.remove(move_to)
+            if current_pos not in empty_squares:
+                empty_squares.append(current_pos)
 
-                if empty_squares:
-                    extra_placement = random.choice(empty_squares)
-                    logger.info(f"{self.name}: Mode 1, selected extra apple at {extra_placement}")
+            if empty_squares:
+                extra_placement = random.choice(empty_squares)
+                logger.info(f"{self.name}: Mode 1, selected extra apple at {extra_placement}")
 
         logger.info(f"{self.name}: Returning move_to={move_to}, extra_apple={extra_placement}")
         return move_to, extra_placement

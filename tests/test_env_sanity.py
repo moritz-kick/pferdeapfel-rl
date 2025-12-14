@@ -77,12 +77,21 @@ def test_mode_1_action_mask_apple_on_legal_move():
     mask = env.action_masks()
     apple_mask = mask[8:]  # First 8 are move masks, rest are apple masks
     
-    # With 2 legal moves, placing apple on either should be ALLOWED
+    # Move destinations are NEVER valid for apple placement in Mode 1
+    # (because after moving there, the player occupies that square)
     idx_1_2 = 1 * 8 + 2  # Square (1,2) -> index 10
     idx_2_1 = 2 * 8 + 1  # Square (2,1) -> index 17
     
-    assert apple_mask[idx_1_2] == True, "Should allow apple on (1,2) when 2 moves exist"
-    assert apple_mask[idx_2_1] == True, "Should allow apple on (2,1) when 2 moves exist"
+    assert apple_mask[idx_1_2] == False, "Should NOT allow apple on move destination (1,2)"
+    assert apple_mask[idx_2_1] == False, "Should NOT allow apple on move destination (2,1)"
+    
+    # But the player's current position IS valid (will be empty after move)
+    idx_0_0 = 0 * 8 + 0
+    assert apple_mask[idx_0_0] == True, "Should allow apple on current position (0,0)"
+    
+    # Other empty non-move squares are valid
+    idx_5_5 = 5 * 8 + 5
+    assert apple_mask[idx_5_5] == True, "Should allow apple on (5,5)"
     
     # Now block one move so only one remains
     board.grid[1, 2] = Board.BROWN_APPLE
@@ -96,10 +105,17 @@ def test_mode_1_action_mask_apple_on_legal_move():
     mask = env.action_masks()
     apple_mask = mask[8:]
     
-    # With only 1 legal move, placing apple on it should be FORBIDDEN
-    assert apple_mask[idx_2_1] == False, "Should NOT allow apple on (2,1) when it's the only move"
+    # With new Mode 1 rules (move first, then place apple):
+    # - We must exclude ALL legal move destinations from apple mask
+    # - (2,1) is a legal move destination, so it's NOT valid for apple
+    # - Player's current position (0,0) WILL be empty after they move
+    idx_0_0 = 0 * 8 + 0  # Square (0,0) -> index 0
+    assert apple_mask[idx_0_0] == True, "Should allow apple on old position (0,0)"
     
-    # But other empty squares should still be allowed
+    # (2,1) is a legal move destination - NOT valid for apple placement
+    assert apple_mask[idx_2_1] == False, "Should NOT allow apple on move destination (2,1)"
+    
+    # Other empty squares should still be allowed
     idx_5_5 = 5 * 8 + 5  # Square (5,5) -> index 45
     assert apple_mask[idx_5_5] == True, "Should allow apple on non-move squares"
     
