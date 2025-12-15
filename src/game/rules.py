@@ -89,7 +89,8 @@ class Rules:
             "golden_phase_started": board.golden_phase_started,
             "white_match_win_declared": getattr(board, "white_match_win_declared", False),
             "white_won_in_brown_phase": getattr(board, "white_won_in_brown_phase", False),
-            "_empty_squares": board._empty_squares.copy(),  # Save cache state
+            "_empty_squares": board._empty_squares.copy(),
+            "active_player": player,
         }
         if hasattr(board, "draw_condition_met"):
             state_snapshot["draw_condition_met"] = board.draw_condition_met

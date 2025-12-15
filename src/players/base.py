@@ -1,9 +1,12 @@
 """Base player class for Pferdeäpfel."""
 
-from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from __future__ import annotations
 
-from src.game.board import Board
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Optional, Tuple
+
+if TYPE_CHECKING:
+    from src.game.board import Board
 
 
 class Player(ABC):

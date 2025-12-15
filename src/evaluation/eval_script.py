@@ -218,14 +218,30 @@ def play_matchup(
 
 
 def evaluate(models: Sequence[Path], games: int, output: Path) -> None:
-    """Evaluate all available players against each other and record results with balanced colors."""
+    """Evaluate all available players against each other and record results with balanced colors.
+    Includes self-play matchups (e.g., RandomPlayer vs RandomPlayer) and each player against itself."""
     player_specs = _build_player_specs(models)
-    if len(player_specs) < 2:
-        raise SystemExit("Need at least two players to evaluate.")
+    if len(player_specs) < 1:
+        raise SystemExit("Need at least one player to evaluate.")
 
     existing_pairs = _load_existing_pairs(output)
     rows: list[dict[str, object]] = []
+    
+    # Collect all unique pairs including self-play
+    # Use combinations for different players, and add self-play pairs separately
+    pairs_to_evaluate = []
+    
+    # Add all pairs of different players (order-insensitive, so combinations is fine)
     for spec_a, spec_b in combinations(player_specs, 2):
+        pairs_to_evaluate.append((spec_a, spec_b))
+    
+    # Add self-play pairs (each player against itself)
+    for spec in player_specs:
+        pairs_to_evaluate.append((spec, spec))
+    
+    # Evaluate each pair
+    for spec_a, spec_b in pairs_to_evaluate:
+        # Skip if we've already evaluated this pair (order-insensitive check)
         matchup_key = _pair_key(spec_a.name, spec_b.name)
         if matchup_key in existing_pairs:
             logger.info("Skipping existing matchup: %s vs %s", spec_a.name, spec_b.name)
@@ -283,6 +299,7 @@ def main() -> None:
     parser.add_argument(
         "--output", type=Path, default=Path("src/evaluation/results.csv"), help="CSV path for aggregated results."
     )
+    parser.add_argument("--new", action="store_true", help="Start a new evaluation run, clearing old results")
     args = parser.parse_args()
 
     input_paths: list[Path] = []
@@ -290,6 +307,12 @@ def main() -> None:
         input_paths.extend(args.models)
     if args.model:
         input_paths.append(args.model)
+
+    # Clear old results if --new flag is set
+    if args.new:
+        if args.output.exists():
+            args.output.unlink()
+            logger.info("Cleared old evaluation results from %s", args.output)
 
     model_paths = discover_models(input_paths or None)
 

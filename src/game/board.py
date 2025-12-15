@@ -47,17 +47,21 @@ class Board:
 
         # Move history for undo
         self.move_history: list[dict[str, Any]] = []
-        
+
         # OPTIMIZATION: Cache empty squares as a set for O(1) lookups
         # Initialize with all squares except horse positions
         self._empty_squares: set[Tuple[int, int]] = {
-            (r, c) for r in range(8) for c in range(8)
-            if (r, c) not in [(0, 0), (7, 7)]
+            (r, c) for r in range(8) for c in range(8) if (r, c) not in [(0, 0), (7, 7)]
         }
+
+        # OPTIMIZATION: Bitmask for occupied squares (1 = occupied, 0 = empty)
+        # Initialize with horse positions
+        self.occupied_mask: int = (1 << (0 * 8 + 0)) | (1 << (7 * 8 + 7))
 
     def copy(self) -> Board:
         """Create a deep copy of the board."""
-        new_board = Board(mode=self.mode)
+        new_board = Board.__new__(Board)
+        new_board.mode = self.mode
         new_board.grid = self.grid.copy()
         new_board.white_pos = self.white_pos
         new_board.black_pos = self.black_pos
@@ -71,6 +75,33 @@ class Board:
         new_board.move_history = copy.deepcopy(self.move_history)
         # Copy the empty squares cache
         new_board._empty_squares = self._empty_squares.copy()
+        new_board.occupied_mask = self.occupied_mask
+        return new_board
+
+    def fast_copy(self) -> Board:
+        """
+        Create a lightweight copy of the board for AI simulations.
+        Does NOT copy move history, which is slow and unnecessary for simulation.
+        """
+        new_board = Board.__new__(Board)
+        new_board.mode = self.mode
+        new_board.grid = self.grid.copy()
+        new_board.white_pos = self.white_pos
+        new_board.black_pos = self.black_pos
+        new_board.brown_apples_remaining = self.brown_apples_remaining
+        new_board.golden_apples_remaining = self.golden_apples_remaining
+        new_board.golden_phase_started = self.golden_phase_started
+        new_board.white_match_win_declared = self.white_match_win_declared
+        new_board.white_won_in_brown_phase = self.white_won_in_brown_phase
+        if hasattr(self, "draw_condition_met"):
+            new_board.draw_condition_met = getattr(self, "draw_condition_met")
+
+        # Optimize: Don't copy history
+        new_board.move_history = []
+
+        # Copy the empty squares cache
+        new_board._empty_squares = self._empty_squares.copy()
+        new_board.occupied_mask = self.occupied_mask
         return new_board
 
     def get_horse_position(self, player: str) -> Tuple[int, int]:
@@ -86,36 +117,42 @@ class Board:
     def is_empty(self, row: int, col: int) -> bool:
         """Check if a square is empty (no horse, no apple). O(1) using cache."""
         return (row, col) in self._empty_squares
-    
+
     def is_empty_slow(self, row: int, col: int) -> bool:
         """Check if a square is empty by reading the grid (for validation)."""
         if not self.is_valid_square(row, col):
             return False
         val = int(self.grid[row, col])
         return val == self.EMPTY
-    
+
     def get_empty_squares(self) -> set[Tuple[int, int]]:
         """Return the set of empty squares. O(1)."""
         return self._empty_squares
-    
+
     def _mark_occupied(self, row: int, col: int) -> None:
         """Mark a square as occupied (remove from empty set)."""
         self._empty_squares.discard((row, col))
-    
+        self.occupied_mask |= 1 << (row * 8 + col)
+
     def _mark_empty(self, row: int, col: int) -> None:
         """Mark a square as empty (add to empty set)."""
         if self.is_valid_square(row, col):
             self._empty_squares.add((row, col))
-    
+            self.occupied_mask &= ~(1 << (row * 8 + col))
+
     def rebuild_empty_cache(self) -> None:
         """Rebuild the empty squares cache from the current grid state.
-        
+
         Call this after modifying board.grid directly (e.g., in tests).
         """
         self._empty_squares = {
-            (r, c) for r in range(self.BOARD_SIZE) for c in range(self.BOARD_SIZE)
-            if self.grid[r, c] == self.EMPTY
+            (r, c) for r in range(self.BOARD_SIZE) for c in range(self.BOARD_SIZE) if self.grid[r, c] == self.EMPTY
         }
+        self.occupied_mask = 0
+        for r in range(self.BOARD_SIZE):
+            for c in range(self.BOARD_SIZE):
+                if self.grid[r, c] != self.EMPTY:
+                    self.occupied_mask |= 1 << (r * 8 + c)
 
     def get_square(self, row: int, col: int) -> int:
         """Get the value at a square."""

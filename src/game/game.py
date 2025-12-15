@@ -5,13 +5,15 @@ from __future__ import annotations
 import logging
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import toon_python
 
 from src.game.board import Board
 from src.game.rules import Rules
-from src.players.base import Player
+
+if TYPE_CHECKING:
+    from src.players.base import Player
 
 logger = logging.getLogger(__name__)
 
@@ -112,13 +114,14 @@ class Game:
         self.board.golden_phase_started = state["golden_phase_started"]
         self.board.white_match_win_declared = state.get("white_match_win_declared", False)
         self.board.white_won_in_brown_phase = state.get("white_won_in_brown_phase", False)
+        self.board._empty_squares = state["_empty_squares"]
 
         # Remove last log entry if logging
         if self.logging and self.log_data:
             self.log_data.pop()
 
-        # Switch turn back
-        self.switch_turn()
+        # Restore turn to the player who made the move
+        self.current_player = state["active_player"]
 
         # Reset game over state
         self.winner = None

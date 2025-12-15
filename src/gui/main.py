@@ -3,7 +3,6 @@
 import json
 import logging
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -11,6 +10,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -24,29 +24,12 @@ from src.game.game import Game
 from src.game.rules import Rules
 from src.players.base import Player
 from src.players.greedy import GreedyPlayer
+from src.players.heuristic_player import HeuristicPlayer
 from src.players.human import HumanPlayer
+from src.players.minimax import MinimaxPlayer
 from src.players.random import RandomPlayer
-from src.players.rl import discover_rl_players
-from src.players.rl.ppo_player import PPOPlayer as RLPPOPlayer
 from src.utils.debug_util import write_debug_log
 from src.utils.toon_parser import parse_toon
-
-
-# --- Placeholder Player for later implementation---
-
-
-class MCTSPlayer(Player):
-    """Placeholder for MCTS Player.
-    Should be implemented in a new file like Human & Random.
-    """
-
-    def get_move(
-        self, board: Any, legal_moves: list[tuple[int, int]]
-    ) -> tuple[tuple[int, int], Optional[tuple[int, int]]]:
-        """Placeholder implementation."""
-        if not legal_moves:
-            return (-1, -1), None
-        return legal_moves[0], None
 
 
 class BoardWidget(QWidget):
@@ -60,10 +43,9 @@ class BoardWidget(QWidget):
         super().__init__(parent)
         self.game: Optional[Game] = None
         self.selected_square: Optional[tuple[int, int]] = None
-        # Mode 3: Move waiting for extra apple or confirmation
+        # Mode 1 & 3: Move waiting for extra/required apple placement
         self.pending_move: Optional[tuple[int, int]] = None
-        # Mode 1: Move waiting for required apple placement
-        self.pending_move_mode1: Optional[tuple[int, int]] = None
+        self.pending_apple: Optional[tuple[int, int]] = None
         self.legal_moves: list[tuple[int, int]] = []
         self.setMinimumSize(
             self.BOARD_MARGIN * 2 + self.SQUARE_SIZE * 8,
@@ -114,34 +96,27 @@ class BoardWidget(QWidget):
         # --- MODE 1: Free Placement (Move, then Apple) ---
         if mode == 1:
             # If we have a pending move, this click is for the apple placement
-            if self.pending_move_mode1 is not None:
-                # Check if clicked square is valid for apple placement
-                # Must be empty AND not the move destination (player will be there)
-                if self.game.board.is_empty(square[0], square[1]) and square != self.pending_move_mode1:
-                    # Execute move with the apple placement
-                    success = self.game.make_move(self.pending_move_mode1, square)
-                    if success:
-                        self.pending_move_mode1 = None
-                        self.selected_square = None
-                        self.update_legal_moves()
-                        self.update()
-                        parent = self.parent()
-                        if isinstance(parent, GameWindow):
-                            parent.update_ui()
-                    else:
-                        QMessageBox.warning(self, "Invalid Move", "Move invalid.")
-                        self.pending_move_mode1 = None
-                        self.update()
+            if self.pending_move is not None:
+                # Execute move with the apple placement (Game validates apple placement)
+                success = self.game.make_move(self.pending_move, square)
+                if success:
+                    self.pending_move = None
+                    self.selected_square = None
+                    self.update_legal_moves()
+                    self.update()
+                    parent = self.parent()
+                    if isinstance(parent, GameWindow):
+                        parent.update_ui()
                 else:
-                    # Clicked invalid square for apple, cancel pending move
-                    self.pending_move_mode1 = None
+                    QMessageBox.warning(self, "Invalid Move", "Move invalid (apple must be on empty square).")
+                    self.pending_move = None
                     self.selected_square = None
                     self.update()
 
             # No pending move, this click is to select the move destination
             else:
                 if square in self.legal_moves:
-                    self.pending_move_mode1 = square
+                    self.pending_move = square
                     self.selected_square = square
                     self.update()
 
@@ -172,27 +147,21 @@ class BoardWidget(QWidget):
 
             # If we have a pending move, this click is for extra apple placement
             elif self.pending_move is not None:
-                if self.game.board.is_empty(square[0], square[1]):
-                    # Place extra apple and complete the move
-                    success = self.game.make_move(self.pending_move, square)
-                    if success:
-                        self.pending_move = None
-                        self.selected_square = None
-                        self.update_legal_moves()
-                        self.update()
-                        parent = self.parent()
-                        if isinstance(parent, GameWindow):
-                            parent.update_ui()
-                    else:
-                        # Invalid placement (e.g., would block White)
-                        QMessageBox.warning(
-                            self, "Invalid Placement", "Cannot place apple here (would block White's moves)."
-                        )
-                        self.pending_move = None
-                        self.update()
-                else:
-                    # Square not empty, cancel pending move
+                # Place extra apple and complete the move (Game validates apple placement)
+                success = self.game.make_move(self.pending_move, square)
+                if success:
                     self.pending_move = None
+                    self.selected_square = None
+                    self.update_legal_moves()
+                    self.update()
+                    parent = self.parent()
+                    if isinstance(parent, GameWindow):
+                        parent.update_ui()
+                else:
+                    # Invalid placement (e.g., would block White, or occupied)
+                    QMessageBox.warning(self, "Invalid Move", "Invalid move or apple placement.")
+                    self.pending_move = None
+                    self.selected_square = None
                     self.update()
 
             elif square in self.legal_moves:
@@ -277,15 +246,10 @@ class GameWindow(QWidget):
         super().__init__()
         self.project_root = Path(__file__).resolve().parents[2]
         self.game: Optional[Game] = None
-        self.rl_player_classes = discover_rl_players()
-        self.ppo_label = getattr(RLPPOPlayer, "DISPLAY_NAME", "ppo").lower()
         self.player_factories = self._build_player_factories()
-        self.available_ppo_models: list[Path] = []
-        self._suppress_model_signals = False
         self.log_dir = Path("data/logs/game")
         self.debug_log_dir = Path("data/logs/debug")
         self.init_ui()
-        self._refresh_ppo_model_options()
         self.load_config()
         self.new_game()
 
@@ -307,142 +271,11 @@ class GameWindow(QWidget):
             "human": lambda color: HumanPlayer(color.capitalize()),
             "random": lambda color: RandomPlayer(color.capitalize()),
             "greedy": lambda color: GreedyPlayer(color),
-            "mcts": lambda color: MCTSPlayer(color),
-            self.ppo_label: lambda color: self._build_ppo_player(color, None),
+            "heuristic": lambda color: HeuristicPlayer(color.capitalize()),
+            "minimax": lambda color: MinimaxPlayer(color.capitalize()),
         }
 
-        for cls in self.rl_player_classes.values():
-            label = getattr(cls, "DISPLAY_NAME", cls.__name__).lower()
-            if label == self.ppo_label:
-                continue
-            factories[label] = lambda color, cls=cls: cls(color)
-
         return factories
-
-    def _discover_ppo_models(self) -> list[Path]:
-        """Return PPO model zip files sorted by most recent first."""
-        roots = [
-            self.project_root / "data" / "models" / "ppo",
-            self.project_root / "data" / "models",
-        ]
-        candidates: list[Path] = []
-
-        for root in roots:
-            if root.is_file() and root.suffix == ".zip":
-                candidates.append(root.resolve())
-            elif root.is_dir():
-                candidates.extend(p.resolve() for p in root.rglob("*.zip"))
-
-        # Deduplicate and sort by modified time (desc)
-        seen: set[Path] = set()
-        unique: list[Path] = []
-        for path in candidates:
-            if path not in seen and path.exists():
-                seen.add(path)
-                unique.append(path)
-
-        def _mtime_or_zero(path: Path) -> float:
-            try:
-                return path.stat().st_mtime
-            except OSError:
-                return 0.0
-
-        unique.sort(key=_mtime_or_zero, reverse=True)
-        return unique
-
-    def _format_model_label(self, path: Path) -> str:
-        """Return a user-friendly label for a PPO model path."""
-        try:
-            display_path = path.relative_to(self.project_root)
-        except ValueError:
-            display_path = path
-
-        try:
-            timestamp = datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-            return f"{display_path} ({timestamp})"
-        except OSError:
-            return str(display_path)
-
-    def _refresh_ppo_model_options(self) -> None:
-        """Reload PPO model dropdown options."""
-        self.available_ppo_models = self._discover_ppo_models()
-        options: list[tuple[str, Optional[str]]] = [("Auto (latest available)", None)]
-        options.extend((self._format_model_label(path), str(path)) for path in self.available_ppo_models)
-
-        def _set_items(combo: QComboBox, options_list: list[tuple[str, Optional[str]]]) -> None:
-            current_data = combo.currentData()
-            combo.blockSignals(True)
-            combo.clear()
-            for label, data in options_list:
-                combo.addItem(label, userData=data)
-
-            if current_data is not None:
-                idx = combo.findData(current_data)
-                if idx >= 0:
-                    combo.setCurrentIndex(idx)
-            combo.blockSignals(False)
-
-        _set_items(self.white_model_combo, options)
-        _set_items(self.black_model_combo, options)
-        self._update_model_selector_enabled()
-
-    def _selected_model_path(self, combo: QComboBox) -> Optional[Path]:
-        """Return model path from a combo box selection."""
-        data = combo.currentData()
-        if not data:
-            return None
-        return Path(str(data))
-
-    def _set_model_selection(self, combo: QComboBox, path_value: Optional[str]) -> None:
-        """Set combo selection to provided model path if present."""
-        self._suppress_model_signals = True
-        try:
-            if not path_value:
-                combo.setCurrentIndex(0)
-                return
-
-            existing_idx = combo.findData(path_value)
-            if existing_idx == -1:
-                combo.addItem(str(path_value), userData=path_value)
-                existing_idx = combo.count() - 1
-            combo.setCurrentIndex(existing_idx)
-        finally:
-            self._suppress_model_signals = False
-
-    def _update_model_selector_enabled(self) -> None:
-        """Enable model selectors only when PPO is selected for that side."""
-        white_uses_ppo = self.white_combo.currentText() == self.ppo_label
-        black_uses_ppo = self.black_combo.currentText() == self.ppo_label
-
-        for label_widget, combo, enabled in [
-            (self.white_model_label, self.white_model_combo, white_uses_ppo),
-            (self.black_model_label, self.black_model_combo, black_uses_ppo),
-        ]:
-            label_widget.setEnabled(enabled)
-            combo.setEnabled(enabled)
-
-    def _build_player_instance(self, player_type: str, color: str, model_path: Optional[Path]) -> Player:
-        """Create a player based on selector and optional PPO model path."""
-        if player_type == self.ppo_label:
-            return self._build_ppo_player(color, model_path)
-
-        factory = self.player_factories.get(player_type, self.player_factories["human"])
-        return factory(color)
-
-    def _build_ppo_player(self, color: str, explicit_model: Optional[Path]) -> Player:
-        """Instantiate the PPO player using the selected or latest available model."""
-        resolved_model = self._resolve_ppo_model(explicit_model)
-        return RLPPOPlayer(color, model_path=resolved_model)
-
-    def _resolve_ppo_model(self, explicit_model: Optional[Path]) -> Path:
-        """Return the requested model path or fall back to the latest available."""
-        if explicit_model:
-            return explicit_model
-        if self.available_ppo_models:
-            return self.available_ppo_models[0]
-        raise FileNotFoundError(
-            "No PPO model archives found. Drop a .zip into data/models or models/ppo and press Restart."
-        )
 
     def init_ui(self) -> None:
         """Initialize the UI components."""
@@ -468,32 +301,14 @@ class GameWindow(QWidget):
         player_layout.addStretch()
         layout.addLayout(player_layout)
 
-        # PPO model selection (enabled only when PPO is chosen)
-        model_layout = QHBoxLayout()
-        self.white_model_label = QLabel("White PPO model:")
-        self.white_model_combo = QComboBox()
-        self.white_model_combo.currentIndexChanged.connect(self.on_model_changed)
-        model_tooltip = (
-            "Select a PPO model archive. Enabled only when that side uses PPO; "
-            "Auto picks the newest .zip under data/models."
-        )
-        self.white_model_combo.setToolTip(model_tooltip)
-        self.white_model_label.setToolTip(model_tooltip)
-        model_layout.addWidget(self.white_model_label)
-        model_layout.addWidget(self.white_model_combo)
-
-        model_layout.addSpacing(12)
-
-        self.black_model_label = QLabel("Black PPO model:")
-        self.black_model_combo = QComboBox()
-        self.black_model_combo.currentIndexChanged.connect(self.on_model_changed)
-        self.black_model_combo.setToolTip(model_tooltip)
-        self.black_model_label.setToolTip(model_tooltip)
-        model_layout.addWidget(self.black_model_label)
-        model_layout.addWidget(self.black_model_combo)
-
-        model_layout.addStretch()
-        layout.addLayout(model_layout)
+        # Minimax Settings
+        settings_layout = QHBoxLayout()
+        self.optimal_opening_checkbox = QCheckBox("Use Optimal Opening Moves (Minimax)")
+        self.optimal_opening_checkbox.setChecked(True)
+        self.optimal_opening_checkbox.toggled.connect(self.on_player_changed)  # Recreate players on toggle
+        settings_layout.addWidget(self.optimal_opening_checkbox)
+        settings_layout.addStretch()
+        layout.addLayout(settings_layout)
 
         # Mode selection
         mode_layout = QHBoxLayout()
@@ -527,6 +342,10 @@ class GameWindow(QWidget):
         self.apple_label = QLabel("")
         info_layout.addWidget(self.apple_label)
         info_layout.addStretch()
+        self.depth_label = QLabel("")  # New depth label
+        info_layout.addWidget(self.depth_label)
+        # Add some space
+        info_layout.addSpacing(20)
         self.ai_status_label = QLabel("")
         info_layout.addWidget(self.ai_status_label)
         layout.addLayout(info_layout)
@@ -571,16 +390,11 @@ class GameWindow(QWidget):
                     if idx >= 0:
                         self.black_combo.setCurrentIndex(idx)
 
-                    white_model = config.get("white_ppo_model")
-                    black_model = config.get("black_ppo_model")
-                    self._set_model_selection(self.white_model_combo, white_model)
-                    self._set_model_selection(self.black_model_combo, black_model)
                     self.logging_button.setChecked(logs)
 
                     # Set mode (1 -> index 0, 2 -> index 1, 3 -> index 2)
                     if 1 <= mode <= 3:
                         self.mode_combo.setCurrentIndex(mode - 1)
-                    self._update_model_selector_enabled()
             except Exception:
                 pass
 
@@ -589,11 +403,20 @@ class GameWindow(QWidget):
         white_type = self.white_combo.currentText()
         black_type = self.black_combo.currentText()
 
-        white_model_path = self._selected_model_path(self.white_model_combo)
-        black_model_path = self._selected_model_path(self.black_model_combo)
+        # Helper to create player with current settings
+        def create(type_name: str, color: str) -> Player:
+            if type_name == "minimax":
+                return MinimaxPlayer(
+                    color.capitalize(),
+                    use_optimal_opening=self.optimal_opening_checkbox.isChecked(),
+                )
 
-        white_player = self._build_player_instance(white_type, "white", white_model_path)
-        black_player = self._build_player_instance(black_type, "black", black_model_path)
+            factory = self.player_factories.get(type_name, self.player_factories["human"])
+            # Minimax factory in the dict is still valid but we bypass it here for the custom setting
+            return factory(color.capitalize() if type_name != "greedy" else color)
+
+        white_player = create(white_type, "white")
+        black_player = create(black_type, "black")
 
         return white_player, black_player
 
@@ -621,23 +444,12 @@ class GameWindow(QWidget):
 
     def on_player_changed(self) -> None:
         """Handle player selection change."""
-        self._update_model_selector_enabled()
         if self.game:
             self.new_game()
 
     def on_mode_changed(self) -> None:
         """Handle mode selection change."""
         self.new_game()
-
-    def on_model_changed(self) -> None:
-        """Handle PPO model selection change."""
-        if self._suppress_model_signals:
-            return
-
-        active_white = self.white_combo.currentText() == self.ppo_label
-        active_black = self.black_combo.currentText() == self.ppo_label
-        if self.game and (active_white or active_black):
-            self.new_game()
 
     def on_logging_toggled(self, checked: bool) -> None:
         """Handle logging toggle."""
@@ -682,7 +494,7 @@ class GameWindow(QWidget):
             if isinstance(current, HumanPlayer):
                 mode = self.game.board.mode
                 if mode == 1:
-                    if self.board_widget.pending_move_mode1:
+                    if self.board_widget.pending_move:
                         status_text += " - Select empty square to place apple"
                     else:
                         status_text += " - Select move destination"
@@ -735,7 +547,7 @@ class GameWindow(QWidget):
                 self.update_ui()
 
                 # Update AI status label
-                metadata = current_player.last_move_metadata
+                metadata = getattr(current_player, "last_move_metadata", None)
                 if metadata:
                     source = metadata.get("source", "unknown")
                     reason = metadata.get("reason", "")
@@ -749,6 +561,15 @@ class GameWindow(QWidget):
                         logging.info(f"AI Move Metadata: {metadata}")
                 else:
                     self.ai_status_label.setText("")
+
+                # Update Minimax Depth stats
+                if isinstance(current_player, MinimaxPlayer):
+                    depth = current_player.last_search_depth
+                    nodes = current_player.nodes_evaluated
+                    self.depth_label.setText(f"Depth: {depth}, Nodes: {nodes}")
+                else:
+                    self.depth_label.setText("")
+
         except Exception as e:
             logging.error(f"[GUI ERROR] AI move failed: {e}")
             import traceback
