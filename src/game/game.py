@@ -137,8 +137,11 @@ class Game:
 
         if not legal_moves and not self.game_over:
             # Current player is stuck – determine the winner immediately
-            logger.debug(f"{self.current_player} has no legal moves - game ending")
-            self.winner = Rules.check_win_condition(self.board)
+            # FIX: When current player has no moves, the opponent was the last mover
+            # This is important for capture win conditions in Mode 1/2
+            opponent = "black" if self.current_player == "white" else "white"
+            logger.debug(f"{self.current_player} has no legal moves - game ending (last_mover={opponent})")
+            self.winner = Rules.check_win_condition(self.board, last_mover=opponent)
             self.game_over = True
             logger.debug(f"Winner: {self.winner}")
 
