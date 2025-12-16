@@ -42,6 +42,7 @@ def main():
         mode=args.mode,
         games=args.games,
         include_random=not args.no_random,
+        record_results=False,
     )
 
     print("Profiling complete!")

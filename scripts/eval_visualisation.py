@@ -95,18 +95,28 @@ def analyze_profiler_data(mode: int, profiler: PerformanceProfiler):
             ])
         print_table(f"Mode {mode} - Search Statistics", headers, rows)
     
-    # 3. Version History (if multiple versions exist)
+    # 3. Version History (include all players that have at least one versioned profile)
     version_history_players = []
     for player_name, profiles in profiles_by_player.items():
-        if len(profiles) > 1:
+        # Only include players where the profile has a version tag like "v1", "v2", ...
+        if any(
+            isinstance(p.player_version, str)
+            and len(p.player_version) > 1
+            and p.player_version[0] == "v"
+            and p.player_version[1:].isdigit()
+            for p in profiles
+        ):
             version_history_players.append((player_name, profiles))
     
     if version_history_players:
         headers = ["Player", "Version", "Avg Duration (s)", "Games", "Change from Previous"]
         rows = []
         for player_name, profiles in sorted(version_history_players):
-            # Sort by version number (v1, v2, v3...)
-            sorted_profiles = sorted(profiles, key=lambda p: int(p.player_version[1:]) if p.player_version[1:].isdigit() else 0)
+            # Sort by version number (v1, v2, v3, v4, ...)
+            sorted_profiles = sorted(
+                profiles,
+                key=lambda p: int(p.player_version[1:]) if p.player_version[1:].isdigit() else 0,
+            )
             
             for i, profile in enumerate(sorted_profiles):
                 change_str = "-"
@@ -128,9 +138,20 @@ def analyze_profiler_data(mode: int, profiler: PerformanceProfiler):
         print_table(f"Mode {mode} - Version History", headers, rows)
 
 
-def analyze_mode(mode: int, storage: ResultStorage, all_players: List[str]):
-    """Analyze and print stats for a specific mode."""
-    results = storage.load_results(mode)
+def analyze_mode(
+    mode: int,
+    storage: ResultStorage,
+    all_players: List[str],
+    results_override=None,
+    title_suffix: str = "",
+):
+    """Analyze and print stats for a specific mode.
+
+    If results_override is provided, those GameResult objects are used instead of
+    loading from the default eval file. title_suffix is appended to table titles
+    to distinguish special runs (e.g., short eval vs Random).
+    """
+    results = results_override if results_override is not None else storage.load_results(mode)
     if not results:
         print(f"\nNo results for Mode {mode}")
         return
@@ -225,7 +246,7 @@ def analyze_mode(mode: int, storage: ResultStorage, all_players: List[str]):
     rows = []
     for i, s in enumerate(sorted_stats, 1):
         rows.append([i, s.name, s.games, s.wins, s.draws, s.losses, f"{s.win_rate:.1%}", s.errors])
-    print_table(f"Mode {mode} - Overall Standings", headers, rows)
+    print_table(f"Mode {mode}{title_suffix} - Overall Standings", headers, rows)
 
     # 2. Side Stats (White/Black)
     headers = ["Player", "W Games", "W Win%", "B Games", "B Win%", "Avg Moves", "Avg Time (s)", "Cap(W/L)", "Stck(W/L)"]
@@ -276,7 +297,7 @@ def analyze_mode(mode: int, storage: ResultStorage, all_players: List[str]):
                 f"{stuck_wins}/{stuck_losses}",
             ]
         )
-    print_table(f"Mode {mode} - Detailed Stats", headers, rows)
+    print_table(f"Mode {mode}{title_suffix} - Detailed Stats", headers, rows)
 
     # 3. Matchup Subsubtables
     # Collect unique pairs that have played
@@ -347,7 +368,7 @@ def analyze_mode(mode: int, storage: ResultStorage, all_players: List[str]):
             rows.append([f"{p2} (W) vs {p1} (B)", 0, 0, 0, 0, "-"])
 
         headers = ["Matchup", "Games", "White Wins", "Draws", "Black Wins", "White Win%"]
-        print_table(f"Mode {mode} - Matchup: {p1} vs {p2}", headers, rows)
+        print_table(f"Mode {mode}{title_suffix} - Matchup: {p1} vs {p2}", headers, rows)
 
 
 def main():
@@ -368,6 +389,17 @@ def main():
         
         # Then show evaluation results
         analyze_mode(mode, storage, all_names)
+
+    # Extra window: short evaluation for Mode 2 vs RandomPlayer (if it exists)
+    short_results = storage.load_short_eval_results(2)
+    if short_results:
+        analyze_mode(
+            2,
+            storage,
+            all_names,
+            results_override=short_results,
+            title_suffix=" (Short Eval vs RandomPlayer)",
+        )
 
 
 if __name__ == "__main__":

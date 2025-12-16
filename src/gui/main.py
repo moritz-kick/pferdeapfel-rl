@@ -24,7 +24,7 @@ from src.game.game import Game
 from src.game.rules import Rules
 from src.players.base import Player
 from src.players.greedy import GreedyPlayer
-from src.players.heuristic_player import HeuristicPlayer
+from src.players.heuristic_player import HeuristicPlayer, HeuristicPlayerV2, HeuristicPlayerV3
 from src.players.human import HumanPlayer
 from src.players.minimax import MinimaxPlayer
 from src.players.random import RandomPlayer
@@ -271,7 +271,11 @@ class GameWindow(QWidget):
             "human": lambda color: HumanPlayer(color.capitalize()),
             "random": lambda color: RandomPlayer(color.capitalize()),
             "greedy": lambda color: GreedyPlayer(color),
-            "heuristic": lambda color: HeuristicPlayer(color.capitalize()),
+            # Heuristic variants v1–v3
+            "heuristic": lambda color: HeuristicPlayerV3(color.capitalize()),  # default to latest
+            "heuristic_v1": lambda color: HeuristicPlayer(color.capitalize()),
+            "heuristic_v2": lambda color: HeuristicPlayerV2(color.capitalize()),
+            "heuristic_v3": lambda color: HeuristicPlayerV3(color.capitalize()),
             "minimax": lambda color: MinimaxPlayer(color.capitalize()),
         }
 

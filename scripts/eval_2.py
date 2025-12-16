@@ -18,6 +18,25 @@ def main():
     parser = argparse.ArgumentParser(description="Run Mode 2 Evaluation")
     parser.add_argument("--games", type=int, default=50, help="Minimum games per pair per side")
     parser.add_argument("--new", action="store_true", help="Start a new evaluation run, clearing old results")
+    parser.add_argument(
+        "--profile-only",
+        action="store_true",
+        help="Only run performance profiling against RandomPlayer, skip full pairwise evaluation",
+    )
+    parser.add_argument(
+        "--short-eval",
+        action="store_true",
+        help=(
+            "Run a short evaluation against RandomPlayer only "
+            "(50 games as white and 50 as black for each bot), "
+            "stored separately from the main evaluation."
+        ),
+    )
+    parser.add_argument(
+        "--no-profile",
+        action="store_true",
+        help="Skip the performance profiling step and run only the full pairwise evaluation",
+    )
     args = parser.parse_args()
 
     print("Discovering players...")
@@ -48,8 +67,46 @@ def main():
         storage.clear_results(mode)
         print(f"Cleared old evaluation results for mode {mode}")
 
-    # Performance profiling before main evaluation
-    profiler.profile_all_players(player_classes, mode=mode, games=50, include_random=True)
+    # Optional performance profiling before main evaluation
+    if not args.no_profile:
+        profiler.profile_all_players(player_classes, mode=mode, games=50, include_random=True)
+
+    # If we only wanted profiling, stop here.
+    if args.profile_only:
+        return
+
+    # Short evaluation against RandomPlayer only (stored separately, not part of the main eval).
+    if args.short_eval:
+        names = [cls.__name__ for cls in player_classes]
+        random_cls = None
+        for cls in player_classes:
+            if cls.__name__ == "RandomPlayer":
+                random_cls = cls
+                break
+
+        if random_cls is None:
+            print("RandomPlayer not found among discovered players; cannot run short eval.")
+            return
+
+        print("Running short evaluation against RandomPlayer (50 games as white and 50 as black per bot)...")
+
+        for cls in player_classes:
+            name = cls.__name__
+            if name == "RandomPlayer":
+                continue  # Skip self-random; short eval is random vs each other bot
+
+            # Bot as white, Random as black
+            for _ in range(50):
+                result = runner.run_game(mode, cls, random_cls, name, "RandomPlayer")
+                storage.save_short_eval_result(result)
+
+            # Random as white, Bot as black
+            for _ in range(50):
+                result = runner.run_game(mode, random_cls, cls, "RandomPlayer", name)
+                storage.save_short_eval_result(result)
+
+        print("Short evaluation complete. Results stored separately from the main evaluation.")
+        return
 
     names = [cls.__name__ for cls in player_classes]
     # Include self-matchups (e.g., RandomPlayer vs RandomPlayer, GreedyPlayer vs GreedyPlayer)

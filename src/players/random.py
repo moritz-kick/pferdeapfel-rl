@@ -30,26 +30,35 @@ class RandomPlayer(Player):
         Returns:
             Tuple of (move_to, extra_apple_placement)
         """
-        logger.info(f"{self.name}: get_move called with {len(legal_moves)} legal moves")
+        # Use DEBUG level for per-move tracing to avoid slowing down evaluations.
+        logger.debug("%s: get_move with %d legal moves", self.name, len(legal_moves))
 
         if not legal_moves:
-            logger.error(f"{self.name}: No legal moves available!")
+            logger.error("%s: No legal moves available!", self.name)
             raise ValueError("No legal moves available")
 
         # Choose random move
         move_to = random.choice(legal_moves)
-        logger.info(f"{self.name}: Selected move to {move_to}")
+        logger.debug("%s: Selected move to %s", self.name, move_to)
 
         extra_placement = None
 
         # --- Classic Mode (Mode 3) Logic ---
         if board.mode == 3:
-            logger.info(f"{self.name}: Mode 3, brown apples remaining: {board.brown_apples_remaining}")
+            logger.debug(
+                "%s: Mode 3, brown apples remaining: %d",
+                self.name,
+                board.brown_apples_remaining,
+            )
             # Only in Brown Phase (if apples remaining)
             if board.brown_apples_remaining > 0:
                 # Randomly decide whether to place extra apple (e.g., 50% chance)
                 place_apple = random.random() < 0.5
-                logger.info(f"{self.name}: Decided to {'place' if place_apple else 'skip'} extra apple")
+                logger.debug(
+                    "%s: Decided to %s extra apple",
+                    self.name,
+                    "place" if place_apple else "skip",
+                )
 
                 if place_apple:
                     # SIMULATE THE MOVE to get the correct board state for validation
@@ -86,7 +95,11 @@ class RandomPlayer(Player):
                             if sim_grid[row, col] == Board.EMPTY:
                                 empty_squares.append((row, col))
 
-                    logger.info(f"{self.name}: Found {len(empty_squares)} empty squares (post-move simulation)")
+                    logger.debug(
+                        "%s: Found %d empty squares (post-move simulation)",
+                        self.name,
+                        len(empty_squares),
+                    )
 
                     # Filter out squares that would block White's last move
                     valid_placements = []
@@ -136,7 +149,7 @@ class RandomPlayer(Player):
                                 None  # Captured? Actually in Mode 3 capture ends game usually, but let's handle it.
                             )
 
-                    logger.info(f"{self.name}: Validating placements...")
+                    logger.debug("%s: Validating placements...", self.name)
                     for idx, (r, c) in enumerate(empty_squares):
                         # Temporarily place apple on simulated grid
                         sim_grid[r, c] = Board.BROWN_APPLE  # Assume brown for validation check
@@ -163,12 +176,25 @@ class RandomPlayer(Player):
                             valid_placements.append((r, c))
 
                         if (idx + 1) % 10 == 0:
-                            logger.debug(f"{self.name}: Validated {idx + 1}/{len(empty_squares)} squares")
+                            logger.debug(
+                                "%s: Validated %d/%d squares",
+                                self.name,
+                                idx + 1,
+                                len(empty_squares),
+                            )
 
-                    logger.info(f"{self.name}: Found {len(valid_placements)} valid placements")
+                    logger.debug(
+                        "%s: Found %d valid placements",
+                        self.name,
+                        len(valid_placements),
+                    )
                     if valid_placements:
                         extra_placement = random.choice(valid_placements)
-                        logger.info(f"{self.name}: Selected extra apple placement at {extra_placement}")
+                        logger.debug(
+                            "%s: Selected extra apple placement at %s",
+                            self.name,
+                            extra_placement,
+                        )
 
         # --- Legacy/Other Modes Logic ---
         elif board.mode == 1:
@@ -192,7 +218,16 @@ class RandomPlayer(Player):
 
             if empty_squares:
                 extra_placement = random.choice(empty_squares)
-                logger.info(f"{self.name}: Mode 1, selected extra apple at {extra_placement}")
+                logger.debug(
+                    "%s: Mode 1, selected extra apple at %s",
+                    self.name,
+                    extra_placement,
+                )
 
-        logger.info(f"{self.name}: Returning move_to={move_to}, extra_apple={extra_placement}")
+        logger.debug(
+            "%s: Returning move_to=%s, extra_apple=%s",
+            self.name,
+            move_to,
+            extra_placement,
+        )
         return move_to, extra_placement

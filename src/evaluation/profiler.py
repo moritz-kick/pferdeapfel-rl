@@ -217,8 +217,12 @@ class PerformanceProfiler:
         avg_duration = sum(durations) / len(durations) if durations else 0.0
         avg_moves = sum(move_counts) / len(move_counts) if move_counts else 0.0
 
-        # Determine version based on performance delta
-        version = self._determine_version(player_name, avg_duration)
+        # Determine version:
+        # - Prefer static VERSION attribute on the class (for hand-labelled variants like v1/v2/v3)
+        # - Fallback to automatic performance-based versioning for everything else.
+        version = getattr(player_cls, "VERSION", None)
+        if not isinstance(version, str):
+            version = self._determine_version(player_name, avg_duration)
 
         profile = PlayerProfile(
             player_name=player_name,
@@ -301,8 +305,14 @@ class PerformanceProfiler:
         avg_duration = sum(durations) / len(durations) if durations else 0.0
         avg_moves = sum(move_counts) / len(move_counts) if move_counts else 0.0
 
-        # Determine version based on performance delta
-        version = self._determine_version(player_name, avg_duration)
+        # Determine version:
+        # - Prefer static VERSION on RandomPlayer if defined
+        # - Otherwise use automatic performance-based versioning
+        from src.players.random import RandomPlayer as RP  # Local import to avoid cycles
+
+        version = getattr(RP, "VERSION", None)
+        if not isinstance(version, str):
+            version = self._determine_version(player_name, avg_duration)
 
         profile = PlayerProfile(
             player_name=player_name,

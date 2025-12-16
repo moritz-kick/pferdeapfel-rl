@@ -136,9 +136,14 @@ class Game:
         logger.debug(f"Found {len(legal_moves)} legal moves for {self.current_player}")
 
         if not legal_moves and not self.game_over:
-            # Current player is stuck – determine the winner immediately
+            # The player to move loses if they cannot move.
             logger.debug(f"{self.current_player} has no legal moves - game ending")
-            self.winner = Rules.check_win_condition(self.board)
+            if self.board.mode in [1, 2]:
+                self.winner = "black" if self.current_player == "white" else "white"
+            else:
+                # For classic mode defer to full rule check but provide last mover.
+                last_mover = "white" if self.current_player == "black" else "black"
+                self.winner = Rules.check_win_condition(self.board, last_mover=last_mover)
             self.game_over = True
             logger.debug(f"Winner: {self.winner}")
 

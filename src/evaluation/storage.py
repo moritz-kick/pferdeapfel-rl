@@ -39,9 +39,19 @@ class ResultStorage:
     def _get_file_path(self, mode: int) -> Path:
         return self.data_dir / f"eval_{mode}.jsonl"
 
+    def _get_short_eval_file_path(self, mode: int) -> Path:
+        """Path for short evaluation runs (e.g., vs Random only) for a mode."""
+        return self.data_dir / f"eval_{mode}_short.jsonl"
+
     def save_result(self, result: GameResult) -> None:
         """Append a result to the storage file."""
         file_path = self._get_file_path(result.mode)
+        with open(file_path, "a") as f:
+            f.write(json.dumps(result.to_dict()) + "\n")
+
+    def save_short_eval_result(self, result: GameResult) -> None:
+        """Append a result to the short-eval storage file."""
+        file_path = self._get_short_eval_file_path(result.mode)
         with open(file_path, "a") as f:
             f.write(json.dumps(result.to_dict()) + "\n")
 
@@ -52,6 +62,23 @@ class ResultStorage:
             return []
 
         results = []
+        with open(file_path, "r") as f:
+            for line in f:
+                try:
+                    data = json.loads(line)
+                    results.append(GameResult.from_dict(data))
+                except json.JSONDecodeError:
+                    continue
+
+        return results
+
+    def load_short_eval_results(self, mode: int) -> List[GameResult]:
+        """Load all short-eval results for a given mode."""
+        file_path = self._get_short_eval_file_path(mode)
+        if not file_path.exists():
+            return []
+
+        results: List[GameResult] = []
         with open(file_path, "r") as f:
             for line in f:
                 try:
